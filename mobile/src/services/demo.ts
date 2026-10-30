@@ -72,6 +72,109 @@ async function saveState(state: DemoState) {
 
 function response<T>(value: unknown): T { return value as T; }
 
+function inr(value: number): string {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(value);
+}
+
+function demoAssistantAnswer(question: string, state: DemoState): { answer: string; sources: string[] } {
+  const q = question.toLocaleLowerCase('en-IN');
+  const source = ['fictional sample records'];
+  const hour = 60 * 60 * 1000;
+  const nowMs = Date.now();
+  const days = /(?:last|past|previous)\s*(?:7|seven)\s*days|last week|this week/.test(q) ? 7
+    : /(?:last|past|previous)\s*(?:30|thirty)\s*days|last month|this month/.test(q) ? 30
+      : /yesterday/.test(q) ? 2 : 1;
+  const startMs = nowMs - days * 24 * hour;
+  const transactions = state.transactions.filter(tx => new Date(tx.occurred_at).getTime() >= startMs);
+  const successful = transactions.filter(tx => tx.status === 'succeeded');
+  const collected = successful.reduce((sum, tx) => sum + Number(tx.amount), 0);
+  const refunds = transactions.filter(tx => tx.status === 'refunded')
+    .reduce((sum, tx) => sum + Math.abs(Number(tx.amount)), 0);
+  const period = days === 1 ? 'the last 24 hours' : days === 2 ? 'the last 24 hours ending yesterday' : `the last ${days} days`;
+
+  if (/profit|margin|net income|earnings after cost/.test(q)) {
+    return { answer: 'I can’t calculate profit or margin from these sample payment records. They do not include costs, refunds by item, taxes, or operating expenses.', sources: source };
+  }
+
+  if (/\b(stock|inventory|reorder|product|products)\b/.test(q)) {
+    const matching = state.products.filter(product => q.includes(String(product.name).toLocaleLowerCase('en-IN')));
+    const items = matching.length ? matching : state.products;
+    if (/low|below|reorder|running out|need to order/.test(q)) {
+      const low = items.filter(product => Number(product.quantity) <= Number(product.reorder_level));
+      if (!low.length) return { answer: matching.length ? `${matching[0].name} is above its reorder level in the sample records (${matching[0].quantity} ${matching[0].unit}; reorder at ${matching[0].reorder_level}).` : 'No sample products are at or below their reorder levels.', sources: source };
+      return { answer: `In the sample records, ${low.map(product => `${product.name} has ${product.quantity} ${product.unit} (reorder level ${product.reorder_level})`).join('; ')}.`, sources: source };
+    }
+    return { answer: `Sample stock: ${items.map(product => `${product.name}: ${product.quantity} ${product.unit} (reorder at ${product.reorder_level})`).join('; ')}.`, sources: source };
+  }
+
+  if (/settlement|cash ?flow|payout/.test(q)) {
+    const pending = state.settlements.filter(item => item.status === 'pending');
+    const total = pending.reduce((sum, item) => sum + Number(item.amount), 0);
+    return { answer: `The fictional sample records show ${inr(total)} pending across ${pending.length} settlements. That is a recorded status, not a guaranteed receipt or date.`, sources: source };
+  }
+
+  if (/refund|returned payment/.test(q)) {
+    return { answer: `The fictional sample records show ${inr(refunds)} in refunds during ${period}.`, sources: source };
+  }
+
+  if (/\b(up[iy]|cash|card|payment method|payment type)\b/.test(q)) {
+    const methods = new Map<string, { count: number; amount: number }>();
+    for (const tx of successful) {
+      const method = String(tx.payment_method ?? 'unknown').toUpperCase();
+      const summary = methods.get(method) ?? { count: 0, amount: 0 };
+      summary.count += 1;
+      summary.amount += Number(tx.amount);
+      methods.set(method, summary);
+    }
+    const breakdown = [...methods.entries()].map(([method, summary]) => `${method}: ${inr(summary.amount)} (${summary.count} payments)`);
+    return { answer: breakdown.length ? `Successful sample payments in ${period}: ${breakdown.join('; ')}.` : `There are no successful sample payments in ${period}.`, sources: source };
+  }
+
+  if (/\b(sale|sales|collect|collection|revenue|payment|transaction|transactions)\b/.test(q)) {
+    if (/compare|versus|\bvs\b|change|trend/.test(q) && days === 7) {
+      const previousStart = startMs - 7 * 24 * hour;
+      const previous = state.transactions.filter(tx => {
+        const date = new Date(tx.occurred_at).getTime();
+        return date >= previousStart && date < startMs && tx.status === 'succeeded';
+      }).reduce((sum, tx) => sum + Number(tx.amount), 0);
+      const difference = collected - previous;
+      return { answer: `For the fictional sample records, successful collections were ${inr(collected)} in the last 7 days and ${inr(previous)} in the 7 days before that (${difference >= 0 ? 'up' : 'down'} ${inr(Math.abs(difference))}). These are collections, not profit.`, sources: source };
+    }
+    return { answer: `The fictional sample records show ${inr(collected)} in successful collections across ${successful.length} payments during ${period}, with ${inr(refunds)} in refunds. Collections are not profit.`, sources: source };
+  }
+
+  if (/\bcustomer|customers|marketing consent|opted.?in\b/.test(q)) {
+    const optedIn = state.customers.filter(customer => customer.consent_marketing).length;
+    return { answer: `The sample workspace has ${state.customers.length} fictional customer records; ${optedIn} are marked as opted in to marketing. Verify consent before contacting anyone.`, sources: source };
+  }
+
+  if (/campaign|promotion|offer/.test(q)) {
+    return { answer: state.campaigns.length
+      ? `There are ${state.campaigns.length} fictional sample campaign${state.campaigns.length === 1 ? '' : 's'}: ${state.campaigns.map(campaign => `${campaign.name} (${campaign.status})`).join('; ')}. No messages are sent from this demo.`
+      : 'There are no campaigns in the fictional sample workspace.', sources: source };
+  }
+
+  if (/supplier|vendor/.test(q)) {
+    return { answer: state.suppliers.length
+      ? `Sample suppliers: ${state.suppliers.map(supplier => `${supplier.name}${supplier.active ? ' (active)' : ' (inactive)'}`).join('; ')}.`
+      : 'There are no suppliers in the fictional sample workspace.', sources: source };
+  }
+
+  if (/what should i focus|what should i do|any advice|next step|help me improve/.test(q)) {
+    const low = state.products.filter(product => Number(product.quantity) <= Number(product.reorder_level));
+    const pending = state.settlements.filter(item => item.status === 'pending');
+    const nextSteps = [
+      ...low.map(product => `review stock for ${product.name} (${product.quantity} ${product.unit}; reorder level ${product.reorder_level})`),
+      ...(pending.length ? [`check the status of ${pending.length} pending sample settlement${pending.length === 1 ? '' : 's'}`] : []),
+    ];
+    return { answer: nextSteps.length
+      ? `Based on the fictional sample records, useful checks are: ${nextSteps.join('; ')}. Confirm these against your real business records before acting.`
+      : 'The fictional sample records show no low-stock items or pending settlements to flag. Check the real dashboard for current priorities.', sources: source };
+  }
+
+  return { answer: 'I can answer questions about sample collections and refunds, payment methods, pending settlements, stock and reorder levels, customers’ recorded marketing consent, and campaigns. This offline workspace uses fictional records and has no live generative AI provider connected.', sources: source };
+}
+
 export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<T> {
   const url = new URL(path, 'https://offline.demo');
   const route = url.pathname;
@@ -137,15 +240,9 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
   else if (route === '/assistant/query' && method === 'POST') {
     const conversationId = String(body.conversation_id ?? ''); const history = state.conversations[conversationId] ?? [];
     const question = String(body.question ?? '');
-    const answer = /stock|inventory|reorder/i.test(question)
-      ? 'In this fictional sample, Masala chai (8 cups) and Samosa (5 pieces) are below their reorder levels. Check real stock before ordering.'
-      : /settlement|cash ?flow|payout/i.test(question)
-        ? 'The sample workspace shows ₹3,210 pending across one fictional settlement. This is not a real payout or guaranteed receipt.'
-        : /sale|collect|today|revenue/i.test(question)
-          ? 'The sample workspace shows ₹2,650 in fictional successful collections in the last 24 hours, across 3 sample payments, with ₹199 in sample refunds. This is not your real business data or profit.'
-          : 'I’m the sample assistant. I can summarize the fictional sales, settlement, and stock records shown in this demo. No Paytm data or live AI provider is connected.';
-    history.push({ id: id('message'), role: 'user', content: question, sources: [], created_at: now() }, { id: id('message'), role: 'assistant', content: answer, sources: ['fictional demo records; not live AI'], created_at: now() });
-    state.conversations[conversationId] = history; result = { answer, sources: ['fictional demo records; not live AI'], grounded: true }; changed = true;
+    const { answer, sources } = demoAssistantAnswer(question, state);
+    history.push({ id: id('message'), role: 'user', content: question, sources: [], created_at: now() }, { id: id('message'), role: 'assistant', content: answer, sources, created_at: now() });
+    state.conversations[conversationId] = history; result = { answer, sources, grounded: true }; changed = true;
   }
   else if (route === '/integrations/import/transactions' && method === 'POST') result = { accepted: Array.isArray(body.transactions) ? body.transactions.length : 0, duplicates_skipped: 0, source: 'demo_import', provider_connected: false, message: 'Demo only. No real provider connection was created.' };
   else result = [];
