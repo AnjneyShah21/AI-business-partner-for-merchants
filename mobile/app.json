@@ -22,6 +22,14 @@
       "expo-localization",
       "expo-notifications",
       [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Business Partner to use the microphone for voice questions.",
+          "speechRecognitionPermission": "Allow speech recognition to transcribe your question.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox", "com.google.android.tts", "com.google.android.as"]
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/icon.png",

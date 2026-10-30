@@ -1,8 +1,8 @@
 import { Stack, usePathname, useRouter } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState, type PropsWithChildren } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { Component, useEffect, useState, type PropsWithChildren } from 'react';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { colors } from '@/theme/tokens';
@@ -11,7 +11,7 @@ import '@/i18n';
 const client = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
 
 export default function RootLayout() {
-  return <SafeAreaProvider><QueryClientProvider client={client}><StatusBar style="auto" /><SessionGate><Stack screenOptions={{ headerShown: false }} /></SessionGate></QueryClientProvider></SafeAreaProvider>;
+  return <SafeAreaProvider><QueryClientProvider client={client}><RootErrorBoundary><StatusBar style="auto" /><SessionGate><Stack screenOptions={{ headerShown: false }} /></SessionGate></RootErrorBoundary></QueryClientProvider></SafeAreaProvider>;
 }
 
 function SessionGate({children}:PropsWithChildren){
@@ -23,6 +23,25 @@ function SessionGate({children}:PropsWithChildren){
   setCheckedPath(pathname);
  }).catch(()=>{if(active){if(pathname!=='/')router.replace('/');setCheckedPath(pathname);}});
  return()=>{active=false;};},[pathname,router]);
- if(checkedPath!==pathname)return <View style={{flex:1,justifyContent:'center',backgroundColor:colors.bg}}><ActivityIndicator color={colors.blue}/></View>;
+ if(checkedPath!==pathname)return <View style={{flex:1,justifyContent:'center',alignItems:'center',gap:12,backgroundColor:colors.bg}}><ActivityIndicator color={colors.blue}/><Text style={{color:colors.muted,fontSize:14}}>Opening Business Partner…</Text></View>;
  return <>{children}</>;
+}
+
+class RootErrorBoundary extends Component<PropsWithChildren, { error: Error | null }> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return <View style={{flex:1,justifyContent:'center',padding:24,gap:16,backgroundColor:colors.bg}}>
+        <Text style={{fontSize:26,fontWeight:'700',color:colors.navy}}>Business Partner couldn’t open</Text>
+        <Text style={{fontSize:15,lineHeight:22,color:colors.muted}}>{this.state.error.message || 'The app hit a startup error.'}</Text>
+        <Pressable onPress={()=>this.setState({error:null})} style={{backgroundColor:colors.blue,padding:16,borderRadius:12,alignItems:'center'}}><Text style={{color:'white',fontWeight:'700'}}>Try again</Text></Pressable>
+      </View>;
+    }
+    return this.props.children;
+  }
 }
