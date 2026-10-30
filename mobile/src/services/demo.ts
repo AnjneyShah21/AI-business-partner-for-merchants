@@ -201,6 +201,32 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
 
   if (route === '/dashboard/sales') {
     result = { currency: 'INR', collection_total: '2650.00', successful_transactions: 3, refunds_total: '199.00', pending_settlements: '3210.00', source: 'fictional demo records', as_of: now(), data_available: true };
+  } else if (route === '/analytics/timeline') {
+    const period = url.searchParams.get('period') ?? 'day';
+    const count = period === 'day' ? 24 : period === 'week' ? 7 : 30;
+    const todayText = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date());
+    const [year, month, date] = todayText.split('-').map(Number);
+    const dates = Array.from({length: period === 'day' ? 1 : count}, (_, index) => {
+      const value = new Date(Date.UTC(year, month - 1, date - (period === 'day' ? 0 : count - 1) + index));
+      return value.toISOString().slice(0, 10);
+    });
+    const buckets = Array.from({length: count}, (_, index) => ({
+      label: period === 'day' ? `${String(index).padStart(2, '0')}:00` : new Intl.DateTimeFormat('en-IN', {timeZone: 'UTC', day: '2-digit', month: 'short'}).format(new Date(`${dates[index]}T00:00:00Z`)),
+      collections: 0, refunds: 0, successful_transactions: 0,
+    }));
+    const localDate = (value: string) => new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date(value));
+    const localHour = (value: string) => Number(new Intl.DateTimeFormat('en-GB', {timeZone: 'Asia/Kolkata', hour: '2-digit', hourCycle: 'h23'}).format(new Date(value)));
+    for (const transaction of state.transactions) {
+      const bucketIndex = period === 'day' ? (localDate(transaction.occurred_at) === todayText ? localHour(transaction.occurred_at) : -1) : dates.indexOf(localDate(transaction.occurred_at));
+      if (bucketIndex < 0 || bucketIndex >= buckets.length) continue;
+      if (transaction.status === 'succeeded') {
+        buckets[bucketIndex].collections += Number(transaction.amount);
+        buckets[bucketIndex].successful_transactions += 1;
+      } else if (transaction.status === 'refunded') buckets[bucketIndex].refunds += Math.abs(Number(transaction.amount));
+    }
+    const collections = buckets.reduce((sum, bucket) => sum + bucket.collections, 0);
+    const refunds = buckets.reduce((sum, bucket) => sum + bucket.refunds, 0);
+    result = {period, timezone: 'Asia/Kolkata', as_of: now(), start: `${dates[0]}T00:00:00+05:30`, end: now(), buckets: buckets.map(bucket => ({...bucket, collections: bucket.collections.toFixed(2), refunds: bucket.refunds.toFixed(2)})), collections: collections.toFixed(2), refunds: refunds.toFixed(2), successful_transactions: buckets.reduce((sum, bucket) => sum + bucket.successful_transactions, 0), source: 'fictional sample records', collections_are_not_profit: true};
   } else if (route === '/dashboard/briefing') {
     const successfulToday = state.transactions.filter(tx => tx.status === 'succeeded' && Date.now() - new Date(tx.occurred_at).getTime() <= 24 * 60 * 60 * 1000);
     const refundsToday = state.transactions.filter(tx => tx.status === 'refunded' && Date.now() - new Date(tx.occurred_at).getTime() <= 24 * 60 * 60 * 1000);

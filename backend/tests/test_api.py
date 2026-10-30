@@ -59,6 +59,12 @@ def test_tenant_scoped_workflows_and_approval_boundary(monkeypatch):
             assert briefing.json()["language"] == "hi"
             assert briefing.json()["collections"] == "125.50"
             assert any("आज" in item["text"] for item in briefing.json()["insights"])
+            timeline = client.get("/api/v1/analytics/timeline?period=day", headers=headers_a)
+            assert timeline.status_code == 200
+            assert len(timeline.json()["buckets"]) == 24
+            assert timeline.json()["collections"] == "125.50"
+            assert timeline.json()["refunds"] == "10.00"
+            assert timeline.json()["collections_are_not_profit"] is True
             customer = client.post("/api/v1/customers", headers=headers_a,
                                    json={"display_name": "Customer A"}).json()
             assert customer["consent_marketing"] is False

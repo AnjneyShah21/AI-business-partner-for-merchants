@@ -356,6 +356,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/analytics/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sales Timeline */
+        get: operations["sales_timeline_analytics_timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/analytics/anomalies": {
         parameters: {
             query?: never;
@@ -877,6 +894,51 @@ export interface components {
             as_of: string;
             /** Data Available */
             data_available: boolean;
+        };
+        /** SalesTimelineBucket */
+        SalesTimelineBucket: {
+            /** Label */
+            label: string;
+            /** Collections */
+            collections: string;
+            /** Refunds */
+            refunds: string;
+            /** Successful Transactions */
+            successful_transactions: number;
+        };
+        /** SalesTimeline */
+        SalesTimeline: {
+            /** Period */
+            period: string;
+            /** Timezone */
+            timezone: string;
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Buckets */
+            buckets: components["schemas"]["SalesTimelineBucket"][];
+            /** Collections */
+            collections: string;
+            /** Refunds */
+            refunds: string;
+            /** Successful Transactions */
+            successful_transactions: number;
+            /** Source */
+            source: string;
+            /** Collections Are Not Profit */
+            collections_are_not_profit: boolean;
         };
         /** StaffIn */
         StaffIn: {
@@ -1739,6 +1801,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sales_timeline_analytics_timeline_get: {
+        parameters: {
+            query?: {
+                period?: "day" | "week" | "month";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesTimeline"];
                 };
             };
             /** @description Validation Error */

@@ -218,7 +218,7 @@ export default function Assistant() {
 
   const activeVoice = voices.data?.voices.find(voice => voice.voice_id === voiceId);
   return <Screen title="AI Business Partner" subtitle="Ask about your business by voice or text">
-    <Pressable onPress={() => router.back()} accessibilityRole="button" style={{alignSelf: 'flex-start', paddingVertical: 5}}><Text style={{fontSize: 13, fontWeight: '700', color: colors.blue}}>← Back to dashboard</Text></Pressable>
+    <Pressable onPress={() => router.replace('/(tabs)/home')} accessibilityRole="button" style={{alignSelf: 'flex-start', paddingVertical: 5}}><Text style={{fontSize: 13, fontWeight: '700', color: colors.blue}}>← Back to dashboard</Text></Pressable>
     <View style={{backgroundColor: '#EAF4FF', borderColor: '#D6E8FB', borderWidth: 1, borderRadius: 18, padding: 15, gap: 6}}>
       <Text style={{fontSize: 12, fontWeight: '800', color: colors.blue}}>VOICE REPLIES · {speechLoading ? 'PREPARING AUDIO…' : isDemoBuild ? 'DEVICE VOICE' : activeVoice?.name ?? 'ELEVENLABS'}</Text>
       <Text style={{fontSize: 12, lineHeight: 18, color: colors.muted}}>{isDemoBuild ? 'This offline sample uses Android text-to-speech. Connect the backend to select an ElevenLabs voice.' : voices.isError ? 'ElevenLabs voice choices are unavailable. Check the backend setup and restart the API.' : 'Replies can be spoken with an ElevenLabs voice. Your API key stays on the backend.'}</Text>

@@ -613,6 +613,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /analytics/timeline:
+    get:
+      summary: Sales Timeline
+      operationId: sales_timeline_analytics_timeline_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: period
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [day, week, month]
+          default: day
+          title: Period
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesTimeline'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /analytics/anomalies:
     get:
       summary: Sales Anomalies
@@ -1414,6 +1442,81 @@ components:
       - as_of
       - data_available
       title: SalesSummary
+    SalesTimelineBucket:
+      properties:
+        label:
+          type: string
+          title: Label
+        collections:
+          type: string
+          title: Collections
+        refunds:
+          type: string
+          title: Refunds
+        successful_transactions:
+          type: integer
+          title: Successful Transactions
+      type: object
+      required:
+      - label
+      - collections
+      - refunds
+      - successful_transactions
+      title: SalesTimelineBucket
+    SalesTimeline:
+      properties:
+        period:
+          type: string
+          title: Period
+        timezone:
+          type: string
+          title: Timezone
+        as_of:
+          type: string
+          format: date-time
+          title: As Of
+        start:
+          type: string
+          format: date-time
+          title: Start
+        end:
+          type: string
+          format: date-time
+          title: End
+        buckets:
+          items:
+            $ref: '#/components/schemas/SalesTimelineBucket'
+          type: array
+          title: Buckets
+        collections:
+          type: string
+          title: Collections
+        refunds:
+          type: string
+          title: Refunds
+        successful_transactions:
+          type: integer
+          title: Successful Transactions
+        source:
+          type: string
+          title: Source
+        collections_are_not_profit:
+          type: boolean
+          title: Collections Are Not Profit
+      type: object
+      required:
+      - period
+      - timezone
+      - as_of
+      - start
+      - end
+      - buckets
+      - collections
+      - refunds
+      - successful_transactions
+      - source
+      - collections_are_not_profit
+      title: SalesTimeline
     StaffIn:
       properties:
         display_name:

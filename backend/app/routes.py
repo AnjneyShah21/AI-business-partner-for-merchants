@@ -1,7 +1,9 @@
 import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Literal
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
@@ -421,6 +423,65 @@ def period_comparison(days: int = Query(default=7, ge=1, le=90), actor=Depends(c
     return {"current_days": days, "current_collections": str(current), "previous_collections": str(previous),
             "change_percent": str(change_percent) if change_percent is not None else None,
             "comparison_available": previous != 0, "metric": "successful collections; not revenue or profit"}
+
+
+@router.get("/analytics/timeline")
+def sales_timeline(period: Literal["day", "week", "month"] = Query(default="day"),
+                   actor=Depends(current_actor), db: Session = Depends(get_db)):
+    """Return merchant-scoped hourly or daily collections and refunds in India time."""
+    from app.models import Transaction
+
+    tz = ZoneInfo("Asia/Kolkata")
+    local_now = datetime.now(tz)
+    today = local_now.date()
+    if period == "day":
+        first_day = today
+        bucket_count = 24
+        local_start = datetime.combine(today, datetime.min.time(), tzinfo=tz)
+    else:
+        bucket_count = 7 if period == "week" else 30
+        first_day = today - timedelta(days=bucket_count - 1)
+        local_start = datetime.combine(first_day, datetime.min.time(), tzinfo=tz)
+    local_end = local_start + (timedelta(days=1) if period == "day" else timedelta(days=bucket_count))
+    start_utc = local_start.astimezone(timezone.utc)
+    end_utc = local_end.astimezone(timezone.utc)
+    rows = db.scalars(select(Transaction).where(
+        Transaction.merchant_id == actor["merchant_id"],
+        Transaction.occurred_at >= start_utc,
+        Transaction.occurred_at < end_utc,
+    )).all()
+
+    buckets = [{"label": f"{hour:02}:00" if period == "day" else
+                (first_day + timedelta(days=index)).strftime("%d %b"),
+                "collections": Decimal("0.00"), "refunds": Decimal("0.00"),
+                "successful_transactions": 0} for index, hour in enumerate(range(24) if period == "day" else range(bucket_count))]
+    for row in rows:
+        local_time = utc_aware(row.occurred_at).astimezone(tz)
+        index = local_time.hour if period == "day" else (local_time.date() - first_day).days
+        if not 0 <= index < len(buckets):
+            continue
+        if row.status == "succeeded":
+            buckets[index]["collections"] += row.amount
+            buckets[index]["successful_transactions"] += 1
+        elif row.status == "refunded":
+            buckets[index]["refunds"] += abs(row.amount)
+
+    collections = sum((bucket["collections"] for bucket in buckets), Decimal("0.00"))
+    refunds = sum((bucket["refunds"] for bucket in buckets), Decimal("0.00"))
+    return {
+        "period": period,
+        "timezone": "Asia/Kolkata",
+        "as_of": local_now.isoformat(),
+        "start": local_start.isoformat(),
+        "end": local_end.isoformat(),
+        "buckets": [{**bucket, "collections": f"{bucket['collections']:.2f}",
+                     "refunds": f"{bucket['refunds']:.2f}"} for bucket in buckets],
+        "collections": f"{collections:.2f}",
+        "refunds": f"{refunds:.2f}",
+        "successful_transactions": sum(bucket["successful_transactions"] for bucket in buckets),
+        "source": "merchant transaction records",
+        "collections_are_not_profit": True,
+    }
 
 
 @router.get("/analytics/anomalies")

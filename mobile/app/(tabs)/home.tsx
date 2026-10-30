@@ -62,15 +62,15 @@ export default function Home() {
     </Card>
 
     <View style={{alignItems: 'center', paddingTop: 8, paddingBottom: 4}}>
-      <Pressable onPress={() => router.push({pathname: '/assistant', params: {autostart: 'true'}})} accessibilityRole="button" accessibilityLabel="Start voice conversation with your AI business partner" style={{width: 126, height: 126, alignItems: 'center', justifyContent: 'center', borderRadius: 64, backgroundColor: '#E4F6FE', borderWidth: 1, borderColor: '#C2EFFF'}}>
-        <View style={{width: 94, height: 94, alignItems: 'center', justifyContent: 'center', borderRadius: 48, backgroundColor: colors.blue, borderWidth: 5, borderColor: '#79D6FF', elevation: 5}}>
-          <Text style={{fontSize: 38, color: '#FFFFFF'}}>🎙</Text>
+      <Pressable hitSlop={12} onPress={() => router.push({pathname: '/(tabs)/assistant', params: {autostart: 'true'}})} accessibilityRole="button" accessibilityLabel="Start voice conversation with your AI business partner" style={{width: 126, height: 126, alignItems: 'center', justifyContent: 'center', borderRadius: 64, backgroundColor: '#E4F6FE', borderWidth: 1, borderColor: '#C2EFFF'}}>
+        <View pointerEvents="none" style={{width: 94, height: 94, alignItems: 'center', justifyContent: 'center', borderRadius: 48, backgroundColor: colors.blue, borderWidth: 5, borderColor: '#79D6FF', elevation: 5}}>
+          <Text pointerEvents="none" style={{fontSize: 38, color: '#FFFFFF'}}>🎙</Text>
         </View>
       </Pressable>
       <Text style={{fontSize: 18, fontWeight: '800', color: colors.navy, textAlign: 'center', marginTop: 13}}>Talk to your AI business partner</Text>
       <Text style={{fontSize: 13, color: colors.muted, marginTop: 4, textAlign: 'center'}}>Ask in English or Hindi</Text>
       <View style={{flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 14}}>
-        {prompts.map(prompt => <Pressable key={prompt.question} onPress={() => router.push({pathname: '/assistant', params: {question: prompt.question}})} style={{backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 9}}>
+        {prompts.map(prompt => <Pressable key={prompt.question} onPress={() => router.push({pathname: '/(tabs)/assistant', params: {question: prompt.question}})} style={{backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 9}}>
           <Text style={{fontSize: 12, fontWeight: '600', color: colors.navy}}>{prompt.label}</Text>
         </Pressable>)}
       </View>
