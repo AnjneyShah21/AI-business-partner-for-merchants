@@ -1,0 +1,30 @@
+name: checks
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install -e '.[dev]'
+        working-directory: backend
+      - run: pytest -q
+        working-directory: backend
+  mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm, cache-dependency-path: mobile/package-lock.json}
+      - run: npm ci --legacy-peer-deps
+        working-directory: mobile
+      - run: npm run typecheck
+        working-directory: mobile
+      - run: npm run generate:api && git diff --exit-code -- src/api/schema.generated.ts
+        working-directory: mobile
+      - run: npx expo-doctor
+        working-directory: mobile

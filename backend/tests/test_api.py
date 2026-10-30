@@ -1,0 +1,110 @@
+from fastapi.testclient import TestClient
+from datetime import datetime, timezone
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.core.config import get_settings
+from app.core.db import Base, get_db
+from app.main import api, app
+
+
+def test_tenant_scoped_workflows_and_approval_boundary():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    TestingSession = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+    def override_db():
+        db = TestingSession()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    api.dependency_overrides[get_db] = override_db
+    settings = get_settings()
+    old_key = settings.session_signing_key
+    old_env = settings.app_env
+    settings.session_signing_key = "test-only-signing-key-with-more-than-32-bytes"
+    settings.app_env = "testing"
+    try:
+        with TestClient(app) as client:
+            merchant_a = client.post("/api/v1/merchants", json={"name": "Shop A", "tier": "qr"}).json()
+            token_a = client.post("/api/v1/auth/local-session", params={"merchant_id": merchant_a["id"]}).json()["access_token"]
+            headers_a = {"Authorization": f"Bearer {token_a}"}
+            occurred = datetime.now(timezone.utc).isoformat()
+            imported = client.post("/api/v1/integrations/import/transactions", headers=headers_a, json={"transactions":[
+                {"external_id":"payment-1","amount":"125.50","status":"succeeded","occurred_at":occurred},
+                {"external_id":"refund-1","amount":"10.00","status":"refunded","occurred_at":occurred},
+                {"external_id":"payment-1","amount":"125.50","status":"succeeded","occurred_at":occurred},
+            ]})
+            assert imported.status_code == 200
+            assert imported.json()["accepted"] == 2 and imported.json()["duplicates_skipped"] == 1
+            assert imported.json()["provider_connected"] is False
+            repeated = client.post("/api/v1/integrations/import/transactions", headers=headers_a, json={"transactions":[
+                {"external_id":"payment-1","amount":"125.50","status":"succeeded","occurred_at":occurred},
+                {"external_id":"refund-1","amount":"10.00","status":"refunded","occurred_at":occurred},
+            ]})
+            assert repeated.json()["accepted"] == 0 and repeated.json()["duplicates_skipped"] == 2
+            conflict = client.post("/api/v1/integrations/import/transactions", headers=headers_a, json={"transactions":[
+                {"external_id":"payment-1","amount":"999.00","status":"succeeded","occurred_at":occurred},
+            ]})
+            assert conflict.status_code == 409
+            summary = client.get("/api/v1/dashboard/sales?days=1", headers=headers_a).json()
+            assert summary["collection_total"] == "125.50"
+            assert summary["refunds_total"] == "10.00"
+            customer = client.post("/api/v1/customers", headers=headers_a,
+                                   json={"display_name": "Customer A"}).json()
+            assert customer["consent_marketing"] is False
+            created_consent = client.patch(f"/api/v1/customers/{customer['id']}/marketing-consent",
+                                           headers=headers_a, json={"consent": True})
+            assert created_consent.status_code == 200
+            conversation = client.post("/api/v1/conversations", headers=headers_a).json()
+            answer = client.post("/api/v1/assistant/query", headers=headers_a,
+                                 json={"question": "What were today's sales?", "conversation_id": conversation["id"]})
+            assert answer.status_code == 200
+            assert answer.json()["grounded"] is True
+            assert len(client.get(f"/api/v1/conversations/{conversation['id']}/messages", headers=headers_a).json()) == 2
+            proposal = client.post("/api/v1/approvals", headers=headers_a,
+                                   json={"kind": "purchase_order", "payload": {"reference": "PO-1"}}).json()
+            decision = client.post(f"/api/v1/approvals/{proposal['id']}/decision?decision=approve", headers=headers_a).json()
+            assert decision["executed"] is False
+            assert decision["status"] == "approved_pending_provider"
+
+            supplier = client.post("/api/v1/suppliers", headers=headers_a, json={"name": "Local supplier"}).json()
+            product = client.post("/api/v1/inventory", headers=headers_a,
+                                  json={"name": "Tea", "quantity": 2, "reorder_level": 5, "unit": "pack"}).json()
+            adjustment = client.post(f"/api/v1/inventory/{product['id']}/movements", headers=headers_a,
+                                     json={"delta": 4, "reason": "Stock count"})
+            assert adjustment.status_code == 201
+            assert adjustment.json()["resulting_quantity"] == 6
+            insufficient = client.post(f"/api/v1/inventory/{product['id']}/movements", headers=headers_a,
+                                        json={"delta": -7, "reason": "Incorrect count"})
+            assert insufficient.status_code == 409
+            order = client.post("/api/v1/purchase-orders", headers=headers_a, json={
+                "supplier_id": supplier["id"],
+                "lines": [{"product_id": product["id"], "quantity": 8, "unit_cost": "42.50"}],
+            }).json()
+            assert order["status"] == "draft"
+            order_decision = client.post(
+                f"/api/v1/approvals/{order['proposal_id']}/decision?decision=approve", headers=headers_a).json()
+            assert order_decision["executed"] is False
+            listed_orders = client.get("/api/v1/purchase-orders", headers=headers_a).json()
+            assert listed_orders[0]["status"] == "approved_pending_provider"
+
+            merchant_b = client.post("/api/v1/merchants", json={"name": "Shop B", "tier": "qr"}).json()
+            token_b = client.post("/api/v1/auth/local-session", params={"merchant_id": merchant_b["id"]}).json()["access_token"]
+            customers_b = client.get("/api/v1/customers", headers={"Authorization": f"Bearer {token_b}"})
+            assert customers_b.status_code == 200
+            assert customers_b.json() == []
+            foreign = client.patch(f"/api/v1/customers/{customer['id']}/marketing-consent",
+                                   headers={"Authorization": f"Bearer {token_b}"}, json={"consent": False})
+            assert foreign.status_code == 404
+            assert client.get("/api/v1/me").status_code == 401
+            assert client.get("/api/v1/openapi.json").status_code == 200
+    finally:
+        api.dependency_overrides.clear()
+        settings.session_signing_key = old_key
+        settings.app_env = old_env
+        Base.metadata.drop_all(engine)
+        engine.dispose()

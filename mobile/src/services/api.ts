@@ -1,0 +1,21 @@
+import * as SecureStore from 'expo-secure-store';
+import type { components } from '@/api/schema.generated';
+
+const base = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1';
+export type Sales = components['schemas']['SalesSummary'];
+export type Product = components['schemas']['ProductOut'];
+
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = await SecureStore.getItemAsync('session_token');
+  const response = await fetch(`${base}${path}`, { ...init, headers: { 'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init.headers } });
+  if (!response.ok) throw new Error(response.status === 401 ? 'Sign in is required to view merchant data.' : `Service returned ${response.status}.`);
+  return response.json() as Promise<T>;
+}
+
+export async function establishLocalWorkspace(name: string): Promise<void> {
+  if (process.env.EXPO_PUBLIC_LOCAL_BOOTSTRAP !== 'true') throw new Error('Local workspace setup is disabled. Configure the authorized sign-in provider.');
+  const merchant = await api<{id: string}>('/merchants', { method: 'POST', body: JSON.stringify({name, tier:'qr'}) });
+  const session = await api<{access_token: string}>(`/auth/local-session?merchant_id=${encodeURIComponent(merchant.id)}`, { method: 'POST' });
+  await SecureStore.setItemAsync('session_token', session.access_token);
+}
