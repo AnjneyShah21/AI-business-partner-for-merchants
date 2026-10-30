@@ -10,6 +10,7 @@ import { api } from '@/services/api';
 import type { components } from '@/api/schema.generated';
 import { colors } from '@/theme/tokens';
 import { assistantRequestSchema } from '@/utils/validation';
+import { isDemoBuild } from '@/services/demo';
 type Answer = components['schemas']['AssistantResponse'];
 export default function Assistant() {
  const queryClient=useQueryClient(); const [busy,setBusy]=useState(false); const [error,setError]=useState(''); const [conversationId,setConversationId]=useState<string|null>(null);
@@ -22,7 +23,7 @@ export default function Assistant() {
    await api<Answer>('/assistant/query',{method:'POST',body:JSON.stringify({question,conversation_id:id})});reset({question:''});await queryClient.invalidateQueries({queryKey:['conversation',id]});
   }catch(e){setError(e instanceof Error?e.message:'Could not reach the assistant.');}finally{setBusy(false);} }
  async function newConversation(){const row=await api<{id:string}>('/conversations',{method:'POST'});setConversationId(row.id);await SecureStore.setItemAsync('conversation_id',row.id);}
- return <Screen title="AI Assistant" subtitle="Answers grounded in connected merchant data">
+ return <Screen title="AI Assistant" subtitle={isDemoBuild ? 'Sample-data assistant · no live AI provider' : 'Answers grounded in connected merchant data'}>
  <Card title="Ask your business partner"><Controller control={control} name="question" render={({field:{onChange,onBlur,value}})=><TextInput value={value} onChangeText={onChange} onBlur={onBlur} placeholder="How much did I collect today?" multiline style={{minHeight:76,color:colors.ink,fontSize:16}}/>}/>
  {formState.errors.question?<Text style={{color:colors.red}}>{formState.errors.question.message}</Text>:null}
  <Pressable onPress={()=>void handleSubmit(ask)()} disabled={busy} style={{backgroundColor:colors.blue,borderRadius:12,padding:14,alignItems:'center'}}><Text style={{color:'white',fontWeight:'700'}}>{busy?'Checking records…':'Ask business partner'}</Text></Pressable></Card>

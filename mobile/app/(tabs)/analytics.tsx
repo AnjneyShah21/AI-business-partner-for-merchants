@@ -4,6 +4,7 @@ import { ActivityIndicator, Text } from 'react-native';
 import { Card, Note, Screen } from '@/components/Screen';
 import { api } from '@/services/api';
 import { colors } from '@/theme/tokens';
+import { isDemoBuild } from '@/services/demo';
 import Svg, { Rect, Text as SvgText } from 'react-native-svg';
 type Comparison = {current_days:number;current_collections:string;previous_collections:string;change_percent:string|null;comparison_available:boolean;metric:string};
 type Peak = {period_days:number;hours:Array<{hour:number;successful_transactions:number}>;source:string};
@@ -12,7 +13,7 @@ export default function Analytics() {
  const comparison=useQuery({queryKey:['sales-comparison',7],queryFn:()=>api<Comparison>('/analytics/period-comparison?days=7')});
  const peaks=useQuery({queryKey:['peak-hours',30],queryFn:()=>api<Peak>('/analytics/peak-hours?days=30')});
  const alerts=useQuery({queryKey:['sales-anomalies'],queryFn:()=>api<AlertResult>('/analytics/anomalies')});
- return <Screen title="Analytics" subtitle="Connected merchant records">
+ return <Screen title="Analytics" subtitle={isDemoBuild ? 'Fictional sample records' : 'Connected merchant records'}>
   <Card title="7 DAY COLLECTION COMPARISON">{comparison.isLoading?<ActivityIndicator color={colors.blue}/>:comparison.isError?<Note>{comparison.error.message}</Note>:comparison.data?<>
     <Text style={{fontSize:28,fontWeight:'700',color:colors.navy}}>₹{comparison.data.current_collections}</Text>
     <Note>Previous period: ₹{comparison.data.previous_collections}. {comparison.data.comparison_available?`Change: ${comparison.data.change_percent}%`:'A percentage change is unavailable because the previous period has no collections.'}</Note>

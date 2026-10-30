@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-nativ
 import { Redirect } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { establishLocalWorkspace } from '@/services/api';
+import { enterDemoWorkspace, isDemoBuild } from '@/services/demo';
 import { colors } from '@/theme/tokens';
 
 export default function Index() {
@@ -12,11 +13,15 @@ export default function Index() {
   if (!ready) return <View style={{flex:1,justifyContent:'center'}}><ActivityIndicator color={colors.blue}/></View>;
   if (hasSession) return <Redirect href="/(tabs)/home"/>;
   async function create() { setBusy(true); setError(''); try { await establishLocalWorkspace(merchant.trim()); setHasSession(true); } catch (e) { setError(e instanceof Error?e.message:'Could not connect to the service.'); } finally { setBusy(false); } }
+  async function openDemo() { setBusy(true); setError(''); try { await enterDemoWorkspace(); setHasSession(true); } catch (e) { setError(e instanceof Error?e.message:'Could not open the sample workspace.'); } finally { setBusy(false); } }
   const local = process.env.EXPO_PUBLIC_LOCAL_BOOTSTRAP === 'true';
   return <View style={{flex:1,backgroundColor:colors.bg,justifyContent:'center',padding:24,gap:18}}>
     <Text style={{fontSize:30,fontWeight:'700',color:colors.navy}}>Business Partner</Text>
-    <Text style={{fontSize:15,color:colors.muted,lineHeight:22}}>Secure business insights from your connected merchant data.</Text>
-    {local ? <><Text style={{fontSize:12,fontWeight:'700',color:colors.amber}}>LOCAL DEVELOPMENT WORKSPACE</Text>
+    <Text style={{fontSize:15,color:colors.muted,lineHeight:22}}>{isDemoBuild ? 'Explore the merchant tools before connecting real services.' : 'Secure business insights from your connected merchant data.'}</Text>
+    {isDemoBuild ? <><Text style={{fontSize:13,fontWeight:'700',color:colors.amber}}>OFFLINE SAMPLE WORKSPACE</Text>
+      <Text style={{fontSize:14,color:colors.muted,lineHeight:21}}>Explore the app with fictional sales, stock, and settlement records. Nothing here is connected to Paytm, and no payments or messages are sent.</Text>
+      <Pressable disabled={busy} onPress={openDemo} style={{backgroundColor:colors.blue,padding:16,borderRadius:12,alignItems:'center'}}><Text style={{color:'white',fontWeight:'700'}}>{busy?'Opening…':'Explore sample workspace'}</Text></Pressable></>
+      :local ? <><Text style={{fontSize:12,fontWeight:'700',color:colors.amber}}>LOCAL DEVELOPMENT WORKSPACE</Text>
       <TextInput value={merchant} onChangeText={setMerchant} placeholder="Business name" style={{backgroundColor:'white',borderWidth:1,borderColor:colors.border,padding:15,borderRadius:12}}/>
       <Pressable disabled={busy||merchant.trim().length<2} onPress={create} style={{backgroundColor:colors.blue,padding:16,borderRadius:12,alignItems:'center'}}><Text style={{color:'white',fontWeight:'700'}}>{busy?'Setting up…':'Create local workspace'}</Text></Pressable></>
       : <Text style={{fontSize:14,color:colors.muted,lineHeight:22}}>Merchant sign-in is unavailable until the authorized OTP identity provider is configured. This application does not accept a production password or create a demo account.</Text>}
