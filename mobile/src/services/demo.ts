@@ -78,6 +78,7 @@ function inr(value: number): string {
 
 function demoAssistantAnswer(question: string, state: DemoState): { answer: string; sources: string[] } {
   const q = question.toLocaleLowerCase('en-IN');
+  const hindi = /[\u0900-\u097F]/.test(question) || /\b(aaj|kal|kitni|kamai|jama|batao|baaki)\b/.test(q);
   const source = ['fictional sample records'];
   const hour = 60 * 60 * 1000;
   const nowMs = Date.now();
@@ -96,20 +97,22 @@ function demoAssistantAnswer(question: string, state: DemoState): { answer: stri
     return { answer: 'I can’t calculate profit or margin from these sample payment records. They do not include costs, refunds by item, taxes, or operating expenses.', sources: source };
   }
 
-  if (/\b(stock|inventory|reorder|product|products)\b/.test(q)) {
+  if (/\b(stock|inventory|reorder|product|products|maal|samaan)\b|स्टॉक|भंडार|सामान|रीऑर्डर|कम पड़/.test(q)) {
     const matching = state.products.filter(product => q.includes(String(product.name).toLocaleLowerCase('en-IN')));
     const items = matching.length ? matching : state.products;
-    if (/low|below|reorder|running out|need to order/.test(q)) {
+    if (/low|below|reorder|running out|need to order|कम|ऑर्डर/.test(q)) {
       const low = items.filter(product => Number(product.quantity) <= Number(product.reorder_level));
+      if (hindi && low.length) return {answer: 'नमूना रिकॉर्ड में कम स्टॉक: ' + low.map(product => product.name + ' — ' + product.quantity + ' ' + product.unit).join('; ') + '। ऑर्डर करने से पहले असली स्टॉक जांचें।', sources: source};
       if (!low.length) return { answer: matching.length ? `${matching[0].name} is above its reorder level in the sample records (${matching[0].quantity} ${matching[0].unit}; reorder at ${matching[0].reorder_level}).` : 'No sample products are at or below their reorder levels.', sources: source };
       return { answer: `In the sample records, ${low.map(product => `${product.name} has ${product.quantity} ${product.unit} (reorder level ${product.reorder_level})`).join('; ')}.`, sources: source };
     }
     return { answer: `Sample stock: ${items.map(product => `${product.name}: ${product.quantity} ${product.unit} (reorder at ${product.reorder_level})`).join('; ')}.`, sources: source };
   }
 
-  if (/settlement|cash ?flow|payout/.test(q)) {
+  if (/settlement|cash ?flow|payout|सेटलमेंट|निपटान|बाकी|पेंडिंग|कितना.*आना/.test(q)) {
     const pending = state.settlements.filter(item => item.status === 'pending');
     const total = pending.reduce((sum, item) => sum + Number(item.amount), 0);
+    if (hindi) return {answer: 'नमूना रिकॉर्ड में ₹' + total.toLocaleString('en-IN', {maximumFractionDigits: 2}) + ' का सेटलमेंट ' + pending.length + ' भुगतान में लंबित है। यह केवल रिकॉर्ड की स्थिति है, पक्की तारीख नहीं।', sources: source};
     return { answer: `The fictional sample records show ${inr(total)} pending across ${pending.length} settlements. That is a recorded status, not a guaranteed receipt or date.`, sources: source };
   }
 
@@ -130,7 +133,8 @@ function demoAssistantAnswer(question: string, state: DemoState): { answer: stri
     return { answer: breakdown.length ? `Successful sample payments in ${period}: ${breakdown.join('; ')}.` : `There are no successful sample payments in ${period}.`, sources: source };
   }
 
-  if (/\b(sale|sales|collect|collection|revenue|payment|transaction|transactions)\b/.test(q)) {
+  if (/\b(sale|sales|collect|collection|revenue|payment|transaction|transactions|kamai|jama|paisa)\b|आज|कमाई|कितनी.*(?:मिला|जमा|पेमेंट)|पेमेंट.*आज/.test(q)) {
+    if (hindi) return {answer: 'नमूना रिकॉर्ड के अनुसार ' + period + ' में ' + inr(collected) + ' के ' + successful.length + ' सफल पेमेंट और ' + inr(refunds) + ' के रिफंड दर्ज हैं। यह कलेक्शन है, मुनाफ़ा नहीं।', sources: source};
     if (/compare|versus|\bvs\b|change|trend/.test(q) && days === 7) {
       const previousStart = startMs - 7 * 24 * hour;
       const previous = state.transactions.filter(tx => {

@@ -30,6 +30,9 @@ services:
       MODEL_PROVIDER: ${MODEL_PROVIDER:-disabled}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
+      ELEVENLABS_MODEL: ${ELEVENLABS_MODEL:-eleven_multilingual_v2}
       ALLOWED_ORIGINS: http://localhost:8081
     ports: ["8000:8000"]
     depends_on:

@@ -1,15 +1,17 @@
 import json
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
 import jwt
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
 
 from app.auth import current_actor, issue_session
 from app.analytics import summarize_transactions
@@ -82,6 +84,37 @@ def local_session(merchant_id: str, db: Session = Depends(get_db)):
 @api.get("/me")
 def me(actor=Depends(current_actor)):
     return actor
+
+
+class SpeechRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2500)
+    voice_id: str | None = Field(default=None, max_length=128)
+
+
+@api.get("/assistant/voices")
+def assistant_voices(actor=Depends(current_actor)):
+    if not cfg.elevenlabs_api_key:
+        raise HTTPException(503, "ElevenLabs is not configured on the backend")
+    from app.providers import get_elevenlabs_voices
+    try:
+        voices, default_voice_id = get_elevenlabs_voices()
+    except RuntimeError as exc:
+        raise HTTPException(502, "Could not load ElevenLabs voices. Check backend configuration and account access.") from exc
+    return {"voices": voices, "default_voice_id": default_voice_id}
+
+
+@api.post("/assistant/speech")
+def assistant_speech(body: SpeechRequest, actor=Depends(current_actor)):
+    if not cfg.elevenlabs_api_key:
+        raise HTTPException(503, "ElevenLabs is not configured on the backend")
+    from app.providers import generate_elevenlabs_speech
+    try:
+        audio = generate_elevenlabs_speech(body.text, body.voice_id)
+    except RuntimeError as exc:
+        status = 422 if str(exc).startswith("Select a voice") else 502
+        message = str(exc) if status == 422 else "ElevenLabs could not generate speech. Check account access and usage quota."
+        raise HTTPException(status, message) from exc
+    return Response(content=audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
 
 
 @api.get("/dashboard/sales", response_model=SalesSummary)
@@ -191,6 +224,7 @@ def decide_proposal(proposal_id: str, decision: str = Query(pattern="^(approve|r
 def assistant_query(body: AssistantRequest, actor=Depends(current_actor), db: Session = Depends(get_db)):
     # A no-model deterministic assistant is safer than inventing values. AI provider remains opt-in.
     q = body.question.casefold()
+    hindi = bool(re.search(r"[\u0900-\u097f]", q)) or bool(re.search(r"\b(aaj|kal|kitni|kamai|jama|batao|baaki)\b", q))
     conversation = None
     if body.conversation_id:
         conversation = db.scalar(select(Conversation).where(Conversation.id == body.conversation_id,
@@ -206,22 +240,28 @@ def assistant_query(body: AssistantRequest, actor=Depends(current_actor), db: Se
             db.commit()
         return result
 
-    if any(term in q for term in ("sale", "collect", "today", "revenue")):
+    if any(term in q for term in ("sale", "collect", "today", "revenue")) or re.search(r"आज|कमाई|जमा|पेमेंट.*आज|\b(aaj|kamai|jama|kitni.*kamai)\b", q):
         summary = sales_summary(1, actor, db)
-        answer = (f"Connected records show collections of ₹{summary.collection_total} across "
+        answer = (f"जुड़े हुए रिकॉर्ड के अनुसार पिछले 24 घंटों में ₹{summary.collection_total} के "
+                  f"{summary.successful_transactions} सफल पेमेंट हुए। रिफंड ₹{summary.refunds_total} हैं। "
+                  "यह कलेक्शन है, मुनाफ़ा नहीं।" if hindi else
+                  f"Connected records show collections of ₹{summary.collection_total} across "
                   f"{summary.successful_transactions} successful transactions in the last day. "
                   f"Refunds are ₹{summary.refunds_total}. This is collections, not profit.")
         return respond(answer, ["/dashboard/sales?days=1"])
-    if any(term in q for term in ("stock", "inventory", "reorder")):
+    if any(term in q for term in ("stock", "inventory", "reorder")) or re.search(r"स्टॉक|भंडार|सामान|रीऑर्डर|\b(maal|samaan)\b", q):
         low = inventory_alerts(actor, db)
-        if not low: return respond("No low-stock items are recorded in connected inventory.", ["/inventory/alerts"])
+        if not low: return respond("जुड़े हुए इन्वेंटरी रिकॉर्ड में कम स्टॉक वाली वस्तु दर्ज नहीं है।" if hindi else "No low-stock items are recorded in connected inventory.", ["/inventory/alerts"])
         names = ", ".join(f"{p['name']} ({p['quantity']} {p['unit'] if 'unit' in p else 'units'})" for p in low)
-        return respond(f"These recorded items are at or below their reorder level: {names}.", ["/inventory/alerts"])
-    if any(term in q for term in ("settlement", "cash flow", "cashflow", "pending payout")):
+        return respond(f"इन दर्ज वस्तुओं का स्टॉक कम है: {names}। ऑर्डर करने से पहले असली स्टॉक जांचें।" if hindi else f"These recorded items are at or below their reorder level: {names}.", ["/inventory/alerts"])
+    if any(term in q for term in ("settlement", "cash flow", "cashflow", "pending payout")) or re.search(r"सेटलमेंट|निपटान|बाकी|पेंडिंग|\b(baaki|pending|settlement)\b", q):
         items = settlements(actor, db)
         pending = [item for item in items if item["status"] == "pending"]
         total = sum((Decimal(item["amount"]) for item in pending), Decimal("0.00"))
-        return respond(f"Connected provider records show ₹{total} pending across {len(pending)} settlements. This is a recorded status, not a guaranteed receipt date.",
+        answer = (f"जुड़े हुए रिकॉर्ड में ₹{total} के {len(pending)} सेटलमेंट लंबित हैं। यह दर्ज स्थिति है, "
+                  "पैसा आने की पक्की तारीख नहीं।" if hindi else
+                  f"Connected provider records show ₹{total} pending across {len(pending)} settlements. This is a recorded status, not a guaranteed receipt date.")
+        return respond(answer,
                        ["/cashflow/settlements"])
     settings = get_settings()
     if settings.model_provider.casefold() == "gemini" and settings.gemini_api_key:
@@ -231,4 +271,4 @@ def assistant_query(body: AssistantRequest, actor=Depends(current_actor), db: Se
         except RuntimeError as exc:
             raise HTTPException(503, "AI is temporarily unavailable. Check the backend provider configuration and quota.") from exc
         return respond(answer, ["Gemini general guidance; merchant records were not sent"])
-    return respond("I can answer from connected sales, settlement, and inventory records. This question needs a configured data source or AI provider before I can answer reliably.", [])
+    return respond("मैं जुड़े हुए बिक्री, सेटलमेंट और स्टॉक रिकॉर्ड से जवाब दे सकता हूँ। इस सवाल का भरोसेमंद जवाब देने के लिए संबंधित डेटा या AI सेवा कॉन्फ़िगर करनी होगी।" if hindi else "I can answer from connected sales, settlement, and inventory records. This question needs a configured data source or AI provider before I can answer reliably.", [])

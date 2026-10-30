@@ -596,6 +596,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assistant/voices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Assistant Voices */
+        get: operations["assistant_voices_assistant_voices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/speech": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assistant Speech */
+        post: operations["assistant_speech_assistant_speech_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -641,6 +675,33 @@ export interface components {
              * @default true
              */
             grounded: boolean;
+        };
+        /** AssistantVoice */
+        AssistantVoice: {
+            /** Voice Id */
+            voice_id: string;
+            /** Name */
+            name: string;
+            /** Category */
+            category: string;
+            /** Accent */
+            accent: string;
+            /** Gender */
+            gender: string;
+        };
+        /** AssistantVoiceList */
+        AssistantVoiceList: {
+            /** Voices */
+            voices: components["schemas"]["AssistantVoice"][];
+            /** Default Voice Id */
+            default_voice_id: string;
+        };
+        /** SpeechRequest */
+        SpeechRequest: {
+            /** Text */
+            text: string;
+            /** Voice Id */
+            voice_id?: string | null;
         };
         /** CampaignIn */
         CampaignIn: {
@@ -2084,6 +2145,87 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    assistant_voices_assistant_voices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ElevenLabs voices available to the configured account */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantVoiceList"];
+                };
+            };
+            /** @description ElevenLabs voice list is unavailable */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description ElevenLabs is not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    assistant_speech_assistant_speech_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpeechRequest"];
+            };
+        };
+        responses: {
+            /** @description Generated speech audio */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/mpeg": string;
+                };
+            };
+            /** @description Invalid text or unavailable voice */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description ElevenLabs speech generation failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description ElevenLabs is not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     model_provider: str = "disabled"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = ""
+    elevenlabs_model: str = "eleven_multilingual_v2"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

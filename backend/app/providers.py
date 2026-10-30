@@ -42,7 +42,8 @@ def ask_gemini(question: str) -> str:
                 "You are a helpful assistant for small businesses. You do not have access to this "
                 "merchant's account, sales, inventory, settlements, customers, or files. Do not "
                 "claim to have checked their data or invent account-specific figures. Give general "
-                "guidance only, and say when a question requires connected business data. Keep "
+                "guidance only, and say when a question requires connected business data. Reply "
+                "in the language and script used by the merchant, including Hindi or Hinglish. Keep "
                 "the response concise and practical."
             )}]
         },
@@ -73,3 +74,65 @@ def ask_gemini(question: str) -> str:
     if not answer:
         raise RuntimeError("Gemini returned no text response")
     return answer
+
+
+def get_elevenlabs_voices() -> tuple[list[dict[str, str]], str | None]:
+    """Return the account's available ElevenLabs voices without exposing account metadata."""
+    settings = get_settings()
+    if not settings.elevenlabs_api_key:
+        raise RuntimeError("ElevenLabs is not configured")
+
+    request = Request(
+        "https://api.elevenlabs.io/v2/voices?page_size=100",
+        headers={"xi-api-key": settings.elevenlabs_api_key},
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            result = json.loads(response.read())
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+        raise RuntimeError("ElevenLabs could not list the configured account's voices") from exc
+
+    voices = []
+    for voice in result.get("voices", []):
+        if not isinstance(voice, dict) or not voice.get("voice_id") or not voice.get("name"):
+            continue
+        labels = voice.get("labels") if isinstance(voice.get("labels"), dict) else {}
+        voices.append({
+            "voice_id": str(voice["voice_id"]),
+            "name": str(voice["name"]),
+            "category": str(voice.get("category") or "voice"),
+            "accent": str(labels.get("accent") or ""),
+            "gender": str(labels.get("gender") or ""),
+        })
+    if not voices:
+        raise RuntimeError("The configured ElevenLabs account has no available voices")
+
+    voice_ids = {voice["voice_id"] for voice in voices}
+    default_voice_id = settings.elevenlabs_voice_id if settings.elevenlabs_voice_id in voice_ids else voices[0]["voice_id"]
+    return voices, default_voice_id
+
+
+def generate_elevenlabs_speech(text: str, voice_id: str | None = None) -> bytes:
+    """Generate MP3 speech. The key stays on the backend and is never sent to the app."""
+    settings = get_settings()
+    voices, default_voice_id = get_elevenlabs_voices()
+    allowed_voice_ids = {voice["voice_id"] for voice in voices}
+    selected_voice_id = voice_id or default_voice_id
+    if selected_voice_id not in allowed_voice_ids:
+        raise RuntimeError("Select a voice available to the configured ElevenLabs account")
+
+    payload = {"text": text, "model_id": settings.elevenlabs_model}
+    request = Request(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{quote(selected_voice_id, safe='')}?output_format=mp3_44100_128",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"xi-api-key": settings.elevenlabs_api_key, "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=40) as response:
+            audio = response.read(10_000_001)
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError("ElevenLabs could not generate speech; check account access and usage quota") from exc
+    if not audio or len(audio) > 10_000_000:
+        raise RuntimeError("ElevenLabs returned invalid or oversized audio")
+    return audio

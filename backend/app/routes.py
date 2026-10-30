@@ -31,6 +31,9 @@ def integration_status(actor=Depends(current_actor)):
         if item.key == "llm" and settings.model_provider.casefold() == "gemini" and settings.gemini_api_key:
             status = "configured"
             prerequisite = "General AI only; free-tier prompts may be used to improve Google's products"
+        if item.key == "text_to_speech" and settings.elevenlabs_api_key:
+            status = "configured"
+            prerequisite = "ElevenLabs synthesis; usage is subject to the account plan and quota"
         rows.append({"key": item.key, "purpose": item.purpose, "status": status,
                      "prerequisite": prerequisite})
     return rows

@@ -1,21 +1,86 @@
 import { useQuery } from '@tanstack/react-query';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Card, Note, Screen } from '@/components/Screen';
 import { api, Sales } from '@/services/api';
 import { colors } from '@/theme/tokens';
-import { useTranslation } from 'react-i18next';
 import { isDemoBuild } from '@/services/demo';
 
+type Transaction = {id: string; amount: string; status: string; payment_method: string; occurred_at: string};
+const prompts = [
+  {label: 'आज कितनी कमाई हुई?', question: "How much did I collect today?"},
+  {label: 'Who owes payment?', question: 'What settlements are pending?'},
+  {label: "Show today's total", question: "Show today's total"},
+];
+
 export default function Home() {
- const {t}=useTranslation();
- const sales = useQuery({ queryKey: ['sales', 1], queryFn: () => api<Sales>('/dashboard/sales?days=1') });
- return <Screen title={t('home')} subtitle={isDemoBuild ? 'Preview the merchant workspace' : 'Your business, at a glance'}>
-   {sales.isLoading ? <ActivityIndicator color={colors.blue} /> : sales.isError ? <Card title="Connect your merchant data"><Note>{sales.error.message} No sample financial data is shown.</Note></Card> : sales.data ? <>
-    {!sales.data.data_available?<Card title="Waiting for payment records"><Note>There are no connected transactions in this period. The zero totals below are calculated from an empty data feed.</Note></Card>:null}
-    <Card title={isDemoBuild ? 'SAMPLE COLLECTIONS · LAST 24 HOURS' : 'COLLECTIONS · LAST 24 HOURS'}><Text style={{fontSize:32,fontWeight:'700',color:colors.navy}}>₹{sales.data.collection_total}</Text><Note>{sales.data.successful_transactions} {isDemoBuild ? 'sample payments' : 'successful payments'} · as of {new Date(sales.data.as_of).toLocaleString()}</Note><Note>Source: {sales.data.source}</Note></Card>
-    <View style={{flexDirection:'row',gap:12}}><View style={{flex:1}}><Card title="Refunds"><Text style={{fontSize:21,fontWeight:'700',color:colors.ink}}>₹{sales.data.refunds_total}</Text></Card></View><View style={{flex:1}}><Card title="Pending settlement"><Text style={{fontSize:21,fontWeight:'700',color:colors.ink}}>₹{sales.data.pending_settlements}</Text></Card></View></View>
-    <Card title="About these numbers"><Note>{isDemoBuild ? 'These fictional sample collections are not your business data, revenue, or profit.' : 'Collections are successful payment amounts, not revenue or profit. Only connected provider records are included.'}</Note></Card>
-   </>:null}
-   <Card title="Business partner"><Note>Ask about connected sales, settlements, or inventory. Answers include the records used when available.</Note></Card>
- </Screen>;
+  const sales = useQuery({queryKey: ['sales', 1], queryFn: () => api<Sales>('/dashboard/sales?days=1')});
+  const transactions = useQuery({queryKey: ['transactions', 6], queryFn: () => api<Transaction[]>('/transactions?limit=6')});
+  const total = sales.data ? money(sales.data.collection_total) : '—';
+  return <Screen title="Paytm AI Business" subtitle="Your merchant workspace">
+    <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2}}>
+      <View style={{flex: 1}}>
+        <Text style={{fontSize: 13, color: colors.muted}}>MERCHANT WORKSPACE</Text>
+        <Text style={{fontSize: 18, fontWeight: '700', color: colors.navy}}>Store overview</Text>
+      </View>
+      <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+        <View style={{backgroundColor: '#E4F5ED', borderWidth: 1, borderColor: '#B9E3CF', borderRadius: 20, paddingHorizontal: 11, paddingVertical: 7}}><Text style={{fontSize: 12, fontWeight: '700', color: colors.green}}>● Voice ready</Text></View>
+        <Pressable onPress={() => router.push('/(tabs)/profile')} accessibilityRole="button" accessibilityLabel="Open workspace settings" style={{width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: colors.border}}><Text style={{fontSize: 18, color: colors.navy}}>⚙</Text></Pressable>
+      </View>
+    </View>
+
+    <View style={{backgroundColor: colors.card, borderRadius: 20, padding: 18, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 5, borderLeftColor: colors.blue, gap: 11}}>
+      <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start'}}>
+        <View style={{flex: 1}}>
+          <Text style={{fontSize: 13, fontWeight: '600', color: colors.muted}}>Today's money received</Text>
+          <Text style={{fontSize: 30, fontWeight: '800', color: colors.navy, marginTop: 5}}>₹{total}</Text>
+        </View>
+        <View style={{width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E7F0FF'}}>
+          <Text style={{fontSize: 20}}>₹</Text>
+        </View>
+      </View>
+      {sales.isLoading ? <ActivityIndicator color={colors.blue} /> : sales.isError ? <Note>{sales.error.message}</Note> : <View style={{borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 9}}>
+        <Text style={{fontSize: 13, color: colors.muted}}>{sales.data?.successful_transactions ?? 0} successful payments · {sales.data?.data_available ? 'connected records' : 'no records yet'}</Text>
+        <Text style={{fontSize: 11, color: colors.muted, marginTop: 4}}>{isDemoBuild ? 'Fictional sample records' : 'Collections are not profit.'}</Text>
+      </View>}
+    </View>
+
+    <View style={{alignItems: 'center', paddingTop: 8, paddingBottom: 4}}>
+      <Pressable onPress={() => router.push({pathname: '/assistant', params: {autostart: 'true'}})} accessibilityRole="button" accessibilityLabel="Start voice conversation with your AI business partner" style={{width: 126, height: 126, alignItems: 'center', justifyContent: 'center', borderRadius: 64, backgroundColor: '#E4F6FE', borderWidth: 1, borderColor: '#C2EFFF'}}>
+        <View style={{width: 94, height: 94, alignItems: 'center', justifyContent: 'center', borderRadius: 48, backgroundColor: colors.blue, borderWidth: 5, borderColor: '#79D6FF', elevation: 5}}>
+          <Text style={{fontSize: 38, color: '#FFFFFF'}}>🎙</Text>
+        </View>
+      </Pressable>
+      <Text style={{fontSize: 18, fontWeight: '800', color: colors.navy, textAlign: 'center', marginTop: 13}}>Talk to your AI business partner</Text>
+      <Text style={{fontSize: 13, color: colors.muted, marginTop: 4, textAlign: 'center'}}>Ask in Hindi, Hinglish, or English</Text>
+      <View style={{flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 14}}>
+        {prompts.map(prompt => <Pressable key={prompt.question} onPress={() => router.push({pathname: '/assistant', params: {question: prompt.question}})} style={{backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 9}}>
+          <Text style={{fontSize: 12, fontWeight: '600', color: colors.navy}}>{prompt.label}</Text>
+        </Pressable>)}
+      </View>
+    </View>
+
+    <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2}}>
+      <Text style={{fontSize: 18, fontWeight: '800', color: colors.navy}}>Recent payments</Text>
+      <Pressable onPress={() => router.navigate('/wallet')} accessibilityRole="button"><Text style={{fontSize: 13, color: colors.blue, fontWeight: '700'}}>View all</Text></Pressable>
+    </View>
+    {transactions.isLoading ? <ActivityIndicator color={colors.blue} /> : transactions.isError ? <Card title="Payment records"><Note>{transactions.error.message}</Note></Card> : transactions.data?.length ? transactions.data.slice(0, 4).map(tx => <TransactionRow key={tx.id} transaction={tx} />) : <Card title="No payment records"><Note>Connected payment activity will appear here when available.</Note></Card>}
+  </Screen>;
+}
+
+export function TransactionRow({transaction}: {transaction: Transaction}) {
+  const refunded = transaction.status === 'refunded';
+  return <View style={{backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 15, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12}}>
+    <View style={{width: 40, height: 40, borderRadius: 20, backgroundColor: '#E6F3FA', alignItems: 'center', justifyContent: 'center'}}><Text style={{fontSize: 19, color: colors.blue}}>{transaction.payment_method?.toLowerCase().includes('card') ? '▣' : '↗'}</Text></View>
+    <View style={{flex: 1}}>
+      <Text style={{fontSize: 15, fontWeight: '700', color: colors.navy}}>{refunded ? '−' : '+'}₹{money(transaction.amount)}</Text>
+      <Text style={{fontSize: 12, color: colors.muted, marginTop: 3}}>{transaction.payment_method || 'Payment'} · {new Date(transaction.occurred_at).toLocaleString([], {hour: 'numeric', minute: '2-digit'})}</Text>
+    </View>
+    <Text style={{fontSize: 17, color: refunded ? colors.amber : colors.green}}>{refunded ? '↩' : '✓'}</Text>
+  </View>;
+}
+
+export function money(value: string | number) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '0.00';
 }

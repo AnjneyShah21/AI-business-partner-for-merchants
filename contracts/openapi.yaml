@@ -923,6 +923,53 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
+  /assistant/voices:
+    get:
+      summary: Assistant Voices
+      operationId: assistant_voices_assistant_voices_get
+      responses:
+        '200':
+          description: ElevenLabs voices available to the configured account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssistantVoiceList'
+        '503':
+          description: ElevenLabs is not configured
+        '502':
+          description: ElevenLabs voice list is unavailable
+      security:
+      - HTTPBearer: []
+  /assistant/speech:
+    post:
+      summary: Assistant Speech
+      operationId: assistant_speech_assistant_speech_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeechRequest'
+        required: true
+      responses:
+        '200':
+          description: Generated speech audio
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        '422':
+          description: Invalid text or unavailable voice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '503':
+          description: ElevenLabs is not configured
+        '502':
+          description: ElevenLabs speech generation failed
+      security:
+      - HTTPBearer: []
 components:
   schemas:
     ActionCreate:
@@ -997,6 +1044,63 @@ components:
       - answer
       - sources
       title: AssistantResponse
+    AssistantVoice:
+      properties:
+        voice_id:
+          type: string
+          title: Voice Id
+        name:
+          type: string
+          title: Name
+        category:
+          type: string
+          title: Category
+        accent:
+          type: string
+          title: Accent
+        gender:
+          type: string
+          title: Gender
+      type: object
+      required:
+      - voice_id
+      - name
+      - category
+      - accent
+      - gender
+      title: AssistantVoice
+    AssistantVoiceList:
+      properties:
+        voices:
+          items:
+            $ref: '#/components/schemas/AssistantVoice'
+          type: array
+          title: Voices
+        default_voice_id:
+          type: string
+          title: Default Voice Id
+      type: object
+      required:
+      - voices
+      - default_voice_id
+      title: AssistantVoiceList
+    SpeechRequest:
+      properties:
+        text:
+          type: string
+          maxLength: 2500
+          minLength: 1
+          title: Text
+        voice_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+          - type: 'null'
+          title: Voice Id
+      type: object
+      required:
+      - text
+      title: SpeechRequest
     CampaignIn:
       properties:
         name:
