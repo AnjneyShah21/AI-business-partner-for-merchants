@@ -3,9 +3,9 @@ import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from uuid import uuid4
+from typing import Literal
+from zoneinfo import ZoneInfo
 
-import jwt
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
@@ -18,8 +18,9 @@ from app.analytics import summarize_transactions
 from app.core.config import get_settings
 from app.core.db import Base, engine, get_db
 from app.core.time import utc_aware
-from app.models import ActionProposal, AuditEvent, Campaign, Conversation, Merchant, Membership, Message, Product, PurchaseOrder, Settlement, Transaction
-from app.routes import router as business_router
+from app.models import ActionProposal, AuditEvent, Campaign, Conversation, Customer, Merchant, Membership, Message, Product, PurchaseOrder, Settlement, Transaction
+from app.routes import (cashflow_forecast, peak_hours, period_comparison,
+                        router as business_router, tax_summary)
 from app.schemas import (ActionCreate, ActionOut, AssistantRequest, AssistantResponse, MerchantCreate,
                          MerchantOut, ProductCreate, ProductOut, SalesSummary)
 
@@ -130,6 +131,106 @@ def sales_summary(days: int = Query(default=1, ge=1, le=365), actor=Depends(curr
                         as_of=datetime.now(timezone.utc), data_available=bool(txs))
 
 
+@api.get("/dashboard/briefing")
+def dashboard_briefing(language: Literal["en", "hi"] = Query(default="en"),
+                       actor=Depends(current_actor), db: Session = Depends(get_db)):
+    """Build a daily, read-only summary from this merchant's recorded data."""
+    local_now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    local_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = local_start.astimezone(timezone.utc)
+    end = (local_start + timedelta(days=1)).astimezone(timezone.utc)
+    previous_start = start - timedelta(days=1)
+    merchant_id = actor["merchant_id"]
+    rows = db.scalars(select(Transaction).where(
+        Transaction.merchant_id == merchant_id,
+        Transaction.occurred_at >= previous_start,
+        Transaction.occurred_at < end,
+    )).all()
+    today_rows = [row for row in rows if utc_aware(row.occurred_at) >= start]
+    prior_rows = [row for row in rows if utc_aware(row.occurred_at) < start]
+    collected, successful_count, refunds = summarize_transactions(
+        (row.amount, row.status) for row in today_rows
+    )
+    prior_collected, _, _ = summarize_transactions((row.amount, row.status) for row in prior_rows)
+    change_percent = None if prior_collected == 0 else (
+        (collected - prior_collected) / prior_collected * Decimal("100")
+    ).quantize(Decimal("0.01"))
+    low_stock = db.scalars(select(Product).where(
+        Product.merchant_id == merchant_id,
+        Product.active.is_(True),
+        Product.quantity <= Product.reorder_level,
+    ).order_by(Product.name).limit(20)).all()
+    pending = db.scalars(select(Settlement).where(
+        Settlement.merchant_id == merchant_id,
+        Settlement.status == "pending",
+    )).all()
+    utc_now = datetime.now(timezone.utc)
+    expected_soon = [row for row in pending if row.expected_at is not None
+                     and utc_now <= utc_aware(row.expected_at) <= utc_now + timedelta(hours=24)]
+    expected_total = sum((row.amount for row in expected_soon), Decimal("0.00"))
+
+    insights: list[dict[str, str]] = []
+    if successful_count:
+        insights.append({
+            "kind": "collections",
+            "text": (f"आज अभी तक ₹{collected} के {successful_count} सफल पेमेंट दर्ज हुए।"
+                     if language == "hi" else
+                     f"₹{collected} has been collected across {successful_count} successful payments today."),
+        })
+    else:
+        insights.append({
+            "kind": "collections",
+            "text": ("आज के लिए जुड़े हुए रिकॉर्ड में कोई सफल पेमेंट नहीं दिखा।"
+                     if language == "hi" else
+                     "No successful payments are recorded for today yet."),
+        })
+    if change_percent is not None:
+        direction = "बढ़ा" if change_percent >= 0 else "घटा"
+        insights.append({
+            "kind": "comparison",
+            "text": (f"पिछले दिन की समान अवधि से कलेक्शन {abs(change_percent)}% {direction}।"
+                     if language == "hi" else
+                     f"Collections are {abs(change_percent)}% {'up' if change_percent >= 0 else 'down'} versus yesterday."),
+        })
+    if refunds:
+        insights.append({
+            "kind": "refunds",
+            "text": (f"आज ₹{refunds} के रिफंड दर्ज हुए।" if language == "hi"
+                     else f"₹{refunds} in refunds are recorded today."),
+        })
+    if low_stock:
+        names = ", ".join(item.name for item in low_stock[:4])
+        more = len(low_stock) - 4
+        if more > 0:
+            names += f" +{more}"
+        insights.append({
+            "kind": "stock",
+            "text": (f"कम स्टॉक दर्ज है: {names}। ऑर्डर से पहले मात्रा जाँचें।"
+                     if language == "hi" else
+                     f"Low stock is recorded for {names}. Check quantities before ordering."),
+        })
+    if expected_soon:
+        insights.append({
+            "kind": "settlements",
+            "text": (f"अगले 24 घंटों में ₹{expected_total} के {len(expected_soon)} सेटलमेंट अपेक्षित हैं; तारीख बदल सकती है।"
+                     if language == "hi" else
+                     f"₹{expected_total} across {len(expected_soon)} settlements is expected within 24 hours; dates can change."),
+        })
+    return {
+        "language": language,
+        "timezone": "Asia/Kolkata",
+        "as_of": local_now.isoformat(),
+        "data_available": bool(rows or low_stock or pending),
+        "collections": str(collected),
+        "successful_transactions": successful_count,
+        "refunds": str(refunds),
+        "change_vs_yesterday_percent": str(change_percent) if change_percent is not None else None,
+        "insights": insights,
+        "source": "merchant payment, settlement and inventory records",
+        "collections_are_not_profit": True,
+    }
+
+
 @api.get("/transactions")
 def transactions(limit: int = Query(default=50, ge=1, le=200), actor=Depends(current_actor), db: Session = Depends(get_db)):
     rows = db.scalars(select(Transaction).where(Transaction.merchant_id == actor["merchant_id"])
@@ -224,7 +325,12 @@ def decide_proposal(proposal_id: str, decision: str = Query(pattern="^(approve|r
 def assistant_query(body: AssistantRequest, actor=Depends(current_actor), db: Session = Depends(get_db)):
     # A no-model deterministic assistant is safer than inventing values. AI provider remains opt-in.
     q = body.question.casefold()
-    hindi = bool(re.search(r"[\u0900-\u097f]", q)) or bool(re.search(r"\b(aaj|kal|kitni|kamai|jama|batao|baaki)\b", q))
+    hindi = body.response_language == "hi" or (
+        body.response_language is None and (
+            bool(re.search(r"[\u0900-\u097f]", q))
+            or bool(re.search(r"\b(aaj|kal|kitni|kamai|jama|batao|baaki)\b", q))
+        )
+    )
     conversation = None
     if body.conversation_id:
         conversation = db.scalar(select(Conversation).where(Conversation.id == body.conversation_id,
@@ -240,15 +346,55 @@ def assistant_query(body: AssistantRequest, actor=Depends(current_actor), db: Se
             db.commit()
         return result
 
+    if any(term in q for term in ("peak", "busiest hour", "busy time", "rush hour")) or re.search(
+        r"पीक|व्यस्त समय|सबसे ज़्यादा.*समय|किस समय.*ज़्यादा", q
+    ):
+        result = peak_hours(days=30, actor=actor, db=db)
+        hours = result["hours"]
+        if not hours:
+            answer = ("जुड़े हुए रिकॉर्ड में अभी व्यस्त समय बताने के लिए पर्याप्त भुगतान नहीं हैं।"
+                      if hindi else "There are not enough connected payments to identify busy hours yet.")
+        else:
+            top = hours[0]
+            time_label = datetime(2000, 1, 1, top["hour"]).strftime("%I %p").lstrip("0")
+            answer = (f"पिछले 30 दिनों में सबसे व्यस्त दर्ज समय {time_label} रहा, जब {top['successful_transactions']} सफल पेमेंट हुए।"
+                      if hindi else
+                      f"The busiest recorded hour in the last 30 days was {time_label}, with {top['successful_transactions']} successful payments.")
+        return respond(answer, ["/analytics/peak-hours?days=30"])
+
+    if any(term in q for term in ("compare", "comparison", "trend", "versus", " vs ", "last week", "previous week")) or re.search(
+        r"तुलना|बदलाव|पिछले हफ़्ते|पिछले सप्ताह|ट्रेंड", q
+    ):
+        comparison = period_comparison(days=7, actor=actor, db=db)
+        if not comparison["comparison_available"]:
+            answer = ("पिछले 7 दिनों से तुलना करने के लिए पर्याप्त पिछले भुगतान रिकॉर्ड नहीं हैं।"
+                      if hindi else "There are not enough previous payment records for a reliable 7-day comparison.")
+        else:
+            change = Decimal(comparison["change_percent"])
+            answer = (f"पिछले 7 दिनों का सफल कलेक्शन ₹{comparison['current_collections']} रहा, उससे पहले के 7 दिनों में ₹{comparison['previous_collections']} था। बदलाव {abs(change)}% {'बढ़ा' if change >= 0 else 'घटा'}। यह कलेक्शन है, मुनाफ़ा नहीं।"
+                      if hindi else
+                      f"Successful collections were ₹{comparison['current_collections']} in the last 7 days versus ₹{comparison['previous_collections']} in the 7 days before. That is a {abs(change)}% {'increase' if change >= 0 else 'decrease'}. Collections are not profit.")
+        return respond(answer, ["/analytics/period-comparison?days=7"])
+
+    if any(term in q for term in ("cash flow forecast", "expected receipt", "safe to spend", "due tomorrow")) or re.search(
+        r"अगले 24 घंटे|कल तक आने|खर्च करने के लिए", q
+    ):
+        forecast = cashflow_forecast(actor=actor, db=db)
+        amount = forecast["known_pending_receipts_next_24h"]
+        answer = (f"दर्ज अपेक्षित तारीखों के अनुसार अगले 24 घंटों में ₹{amount} आने की उम्मीद है। यह गारंटी नहीं है; उपलब्ध नकद या सुरक्षित खर्च की राशि इसमें शामिल नहीं है।"
+                  if hindi else
+                  f"Recorded expected dates show ₹{amount} due for settlement within 24 hours. This is not guaranteed and does not show available cash or a safe-to-spend amount.")
+        return respond(answer, ["/cashflow/forecast"])
+
     if any(term in q for term in ("sale", "collect", "today", "revenue")) or re.search(r"आज|कमाई|जमा|पेमेंट.*आज|\b(aaj|kamai|jama|kitni.*kamai)\b", q):
-        summary = sales_summary(1, actor, db)
-        answer = (f"जुड़े हुए रिकॉर्ड के अनुसार पिछले 24 घंटों में ₹{summary.collection_total} के "
-                  f"{summary.successful_transactions} सफल पेमेंट हुए। रिफंड ₹{summary.refunds_total} हैं। "
+        summary = dashboard_briefing(language="hi" if hindi else "en", actor=actor, db=db)
+        answer = (f"आज के जुड़े हुए रिकॉर्ड में ₹{summary['collections']} के "
+                  f"{summary['successful_transactions']} सफल पेमेंट हुए। रिफंड ₹{summary['refunds']} हैं। "
                   "यह कलेक्शन है, मुनाफ़ा नहीं।" if hindi else
-                  f"Connected records show collections of ₹{summary.collection_total} across "
-                  f"{summary.successful_transactions} successful transactions in the last day. "
-                  f"Refunds are ₹{summary.refunds_total}. This is collections, not profit.")
-        return respond(answer, ["/dashboard/sales?days=1"])
+                  f"Today's connected records show collections of ₹{summary['collections']} across "
+                  f"{summary['successful_transactions']} successful payments. Refunds are ₹{summary['refunds']}. "
+                  "Collections are not profit.")
+        return respond(answer, ["/dashboard/briefing"])
     if any(term in q for term in ("stock", "inventory", "reorder")) or re.search(r"स्टॉक|भंडार|सामान|रीऑर्डर|\b(maal|samaan)\b", q):
         low = inventory_alerts(actor, db)
         if not low: return respond("जुड़े हुए इन्वेंटरी रिकॉर्ड में कम स्टॉक वाली वस्तु दर्ज नहीं है।" if hindi else "No low-stock items are recorded in connected inventory.", ["/inventory/alerts"])
@@ -263,11 +409,25 @@ def assistant_query(body: AssistantRequest, actor=Depends(current_actor), db: Se
                   f"Connected provider records show ₹{total} pending across {len(pending)} settlements. This is a recorded status, not a guaranteed receipt date.")
         return respond(answer,
                        ["/cashflow/settlements"])
+    if any(term in q for term in ("gst", "tax", "filing", "taxable")) or re.search(r"जीएसटी|टैक्स|कर रिटर्न", q):
+        period = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m")
+        summary = tax_summary(period=period, actor=actor, db=db)
+        answer = (f"{period} के दर्ज टैक्स रिकॉर्ड में कर योग्य राशि ₹{summary['taxable_amount']} और टैक्स ₹{summary['tax_amount']} है। यह ड्राफ़्ट सारांश है, दाख़िल रिटर्न नहीं।"
+                  if hindi else
+                  f"For {period}, recorded tax rows show ₹{summary['taxable_amount']} taxable and ₹{summary['tax_amount']} tax. This is a draft summary, not a filed return.")
+        return respond(answer, [f"/tax/summary?period={period}"])
+    if any(term in q for term in ("customer", "customers", "repeat buyer", "loyalty")) or re.search(r"ग्राहक|बार-बार खरीद", q):
+        customers = db.scalars(select(Customer).where(Customer.merchant_id == actor["merchant_id"])).all()
+        opted_in = sum(bool(customer.consent_marketing) for customer in customers)
+        answer = (f"इस व्यापारी खाते में {len(customers)} ग्राहक रिकॉर्ड हैं; {opted_in} ने मार्केटिंग की सहमति दी है। खरीद का इतिहास उपलब्ध नहीं है, इसलिए दोबारा खरीद की पहचान नहीं कर सकता।"
+                  if hindi else
+                  f"This merchant account has {len(customers)} customer records; {opted_in} have recorded marketing consent. Purchase history is not connected, so repeat buyers cannot be identified.")
+        return respond(answer, ["/customers"])
     settings = get_settings()
     if settings.model_provider.casefold() == "gemini" and settings.gemini_api_key:
         from app.providers import ask_gemini
         try:
-            answer = ask_gemini(body.question)
+            answer = ask_gemini(body.question, "hi" if hindi else "en")
         except RuntimeError as exc:
             raise HTTPException(503, "AI is temporarily unavailable. Check the backend provider configuration and quota.") from exc
         return respond(answer, ["Gemini general guidance; merchant records were not sent"])

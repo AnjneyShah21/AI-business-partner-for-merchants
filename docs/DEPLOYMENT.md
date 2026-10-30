@@ -3,9 +3,10 @@
 ## Local backend
 
 1. Copy the root `.env.example` to `.env`; replace `SESSION_SIGNING_KEY` with at least 32 random characters.
-2. Run `docker compose up --build` from the repository root. The API applies Alembic migrations before starting.
-3. The API is available at `http://localhost:8000/api/v1`; interactive API docs are at `/api/v1/docs`.
-4. For Android Emulator, copy `mobile/.env.example` to `mobile/.env` and keep the emulator API address `10.0.2.2`. The local workspace bootstrap flag is strictly for local development; production rejects these endpoints.
+2. Sign in through `npx -y @elevenlabs/cli@latest onboard init`; the CLI writes the secret to ignored `.env.local`.
+3. Run `docker compose --env-file .env --env-file .env.local up --build` from the repository root. The API applies Alembic migrations before starting.
+4. The API is available at `http://localhost:8000/api/v1`; interactive API docs are at `/api/v1/docs`.
+5. For Android Emulator, copy `mobile/.env.example` to `mobile/.env` and keep the emulator API address `10.0.2.2`. The local workspace bootstrap flag is strictly for local development; production rejects these endpoints.
 
 ## Android build
 
@@ -19,4 +20,4 @@
 - Run migration as a controlled deployment job before API rollout; configure rollback and restore testing.
 - Current compose passwords are local-only examples. Never use them for an internet-accessible environment.
 - SLO figures in `SECURITY.md` are proposed targets and have not been measured.
-- Payment, OTP, LLM, voice, lender, GST, campaign and push integrations are not configured; production data/action flows must remain disabled until partner authorization and validation are completed.
+- Payment, OTP, merchant-data LLM, production voice policy, lender, GST, campaign and push integrations are not approved for production; production data/action flows must remain disabled until partner authorization and validation are completed.

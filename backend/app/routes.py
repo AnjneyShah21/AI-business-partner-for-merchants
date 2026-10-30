@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -449,9 +449,11 @@ def sales_anomalies(actor=Depends(current_actor), db: Session = Depends(get_db))
 @router.get("/cashflow/forecast")
 def cashflow_forecast(actor=Depends(current_actor), db: Session = Depends(get_db)):
     from app.models import Settlement
-    due = datetime.now(timezone.utc) + timedelta(days=1)
+    now = datetime.now(timezone.utc)
+    due = now + timedelta(days=1)
     rows = db.scalars(select(Settlement).where(Settlement.merchant_id == actor["merchant_id"],
                                                Settlement.status == "pending",
+                                               Settlement.expected_at >= now,
                                                Settlement.expected_at <= due)).all()
     return {"known_pending_receipts_next_24h": str(sum((r.amount for r in rows), Decimal("0.00"))),
             "settlement_count": len(rows), "forecast_type": "provider expected dates only",

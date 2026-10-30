@@ -76,9 +76,11 @@ function inr(value: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(value);
 }
 
-function demoAssistantAnswer(question: string, state: DemoState): { answer: string; sources: string[] } {
+function demoAssistantAnswer(question: string, state: DemoState, responseLanguage?: string): { answer: string; sources: string[] } {
   const q = question.toLocaleLowerCase('en-IN');
-  const hindi = /[\u0900-\u097F]/.test(question) || /\b(aaj|kal|kitni|kamai|jama|batao|baaki)\b/.test(q);
+  const hindi = responseLanguage === 'hi' || (responseLanguage !== 'en' && (
+    /[\u0900-\u097F]/.test(question) || /\b(aaj|kal|kitni|kamai|jama|batao|baaki)\b/.test(q)
+  ));
   const source = ['fictional sample records'];
   const hour = 60 * 60 * 1000;
   const nowMs = Date.now();
@@ -134,6 +136,15 @@ function demoAssistantAnswer(question: string, state: DemoState): { answer: stri
   }
 
   if (/\b(sale|sales|collect|collection|revenue|payment|transaction|transactions|kamai|jama|paisa)\b|आज|कमाई|कितनी.*(?:मिला|जमा|पेमेंट)|पेमेंट.*आज/.test(q)) {
+    if (hindi && /compare|versus|\bvs\b|change|trend|तुलना|बदलाव|ट्रेंड/.test(q) && days === 7) {
+      const previousStart = startMs - 7 * 24 * hour;
+      const previous = state.transactions.filter(tx => {
+        const date = new Date(tx.occurred_at).getTime();
+        return date >= previousStart && date < startMs && tx.status === 'succeeded';
+      }).reduce((sum, tx) => sum + Number(tx.amount), 0);
+      const difference = collected - previous;
+      return { answer: `नमूना रिकॉर्ड में पिछले 7 दिनों का सफल कलेक्शन ${inr(collected)} रहा और उससे पहले के 7 दिनों में ${inr(previous)} था। कलेक्शन ${difference >= 0 ? 'बढ़ा' : 'घटा'} ${inr(Math.abs(difference))}। यह मुनाफ़ा नहीं है।`, sources: source };
+    }
     if (hindi) return {answer: 'नमूना रिकॉर्ड के अनुसार ' + period + ' में ' + inr(collected) + ' के ' + successful.length + ' सफल पेमेंट और ' + inr(refunds) + ' के रिफंड दर्ज हैं। यह कलेक्शन है, मुनाफ़ा नहीं।', sources: source};
     if (/compare|versus|\bvs\b|change|trend/.test(q) && days === 7) {
       const previousStart = startMs - 7 * 24 * hour;
@@ -190,6 +201,26 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
 
   if (route === '/dashboard/sales') {
     result = { currency: 'INR', collection_total: '2650.00', successful_transactions: 3, refunds_total: '199.00', pending_settlements: '3210.00', source: 'fictional demo records', as_of: now(), data_available: true };
+  } else if (route === '/dashboard/briefing') {
+    const successfulToday = state.transactions.filter(tx => tx.status === 'succeeded' && Date.now() - new Date(tx.occurred_at).getTime() <= 24 * 60 * 60 * 1000);
+    const refundsToday = state.transactions.filter(tx => tx.status === 'refunded' && Date.now() - new Date(tx.occurred_at).getTime() <= 24 * 60 * 60 * 1000);
+    const collections = successfulToday.reduce((sum, tx) => sum + Number(tx.amount), 0);
+    const refunds = refundsToday.reduce((sum, tx) => sum + Math.abs(Number(tx.amount)), 0);
+    const hindi = url.searchParams.get('language') === 'hi';
+    const lowStock = state.products.filter(product => Number(product.quantity) <= Number(product.reorder_level));
+    const pending = state.settlements.filter(item => item.status === 'pending');
+    const insights = [{kind:'collections', text: hindi
+      ? `नमूना रिकॉर्ड में पिछले 24 घंटों का कलेक्शन ₹${collections.toLocaleString('en-IN')} है।`
+      : `Fictional sample collections in the last 24 hours are ₹${collections.toLocaleString('en-IN')}.`}];
+    if (lowStock.length) insights.push({kind:'stock', text: hindi
+      ? `नमूना रिकॉर्ड में कम स्टॉक: ${lowStock.slice(0, 4).map(product => product.name).join(', ')}।`
+      : `Fictional low-stock records: ${lowStock.slice(0, 4).map(product => product.name).join(', ')}.`});
+    if (pending.length) insights.push({kind:'settlements', text: hindi
+      ? `${pending.length} नमूना सेटलमेंट लंबित हैं; तारीख की गारंटी नहीं है।`
+      : `${pending.length} fictional settlements are pending; dates are not guaranteed.`});
+    result = {language: hindi ? 'hi' : 'en', timezone:'Asia/Kolkata', as_of:now(), data_available:true,
+      collections:collections.toFixed(2), successful_transactions:successfulToday.length, refunds:refunds.toFixed(2),
+      change_vs_yesterday_percent:null, insights, source:'fictional sample records', collections_are_not_profit:true};
   } else if (route === '/transactions' && method === 'GET') result = state.transactions;
   else if (route === '/cashflow/settlements') result = state.settlements;
   else if (route === '/cashflow/forecast') result = { known_pending_receipts_next_24h: '3210.00', settlement_count: 1, forecast_type: 'sample expected dates', assumptions: ['Fictional records only.'], uncertainty: 'Not a guaranteed receipt.' };
@@ -244,7 +275,7 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
   else if (route === '/assistant/query' && method === 'POST') {
     const conversationId = String(body.conversation_id ?? ''); const history = state.conversations[conversationId] ?? [];
     const question = String(body.question ?? '');
-    const { answer, sources } = demoAssistantAnswer(question, state);
+    const { answer, sources } = demoAssistantAnswer(question, state, String(body.response_language ?? ''));
     history.push({ id: id('message'), role: 'user', content: question, sources: [], created_at: now() }, { id: id('message'), role: 'assistant', content: answer, sources, created_at: now() });
     state.conversations[conversationId] = history; result = { answer, sources, grounded: true }; changed = true;
   }

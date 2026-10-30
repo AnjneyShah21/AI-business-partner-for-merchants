@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,6 +34,7 @@ class ProductOut(ProductCreate):
 class AssistantRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     conversation_id: str | None = None
+    response_language: Literal["en", "hi"] | None = None
 
 
 class AssistantResponse(BaseModel):

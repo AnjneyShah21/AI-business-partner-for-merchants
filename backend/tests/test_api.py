@@ -9,7 +9,7 @@ from app.core.db import Base, get_db
 from app.main import api, app
 
 
-def test_tenant_scoped_workflows_and_approval_boundary():
+def test_tenant_scoped_workflows_and_approval_boundary(monkeypatch):
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     TestingSession = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
@@ -25,6 +25,7 @@ def test_tenant_scoped_workflows_and_approval_boundary():
     settings = get_settings()
     old_key = settings.session_signing_key
     old_env = settings.app_env
+    old_elevenlabs_key = settings.elevenlabs_api_key
     settings.session_signing_key = "test-only-signing-key-with-more-than-32-bytes"
     settings.app_env = "testing"
     try:
@@ -53,6 +54,11 @@ def test_tenant_scoped_workflows_and_approval_boundary():
             summary = client.get("/api/v1/dashboard/sales?days=1", headers=headers_a).json()
             assert summary["collection_total"] == "125.50"
             assert summary["refunds_total"] == "10.00"
+            briefing = client.get("/api/v1/dashboard/briefing?language=hi", headers=headers_a)
+            assert briefing.status_code == 200
+            assert briefing.json()["language"] == "hi"
+            assert briefing.json()["collections"] == "125.50"
+            assert any("आज" in item["text"] for item in briefing.json()["insights"])
             customer = client.post("/api/v1/customers", headers=headers_a,
                                    json={"display_name": "Customer A"}).json()
             assert customer["consent_marketing"] is False
@@ -61,10 +67,28 @@ def test_tenant_scoped_workflows_and_approval_boundary():
             assert created_consent.status_code == 200
             conversation = client.post("/api/v1/conversations", headers=headers_a).json()
             answer = client.post("/api/v1/assistant/query", headers=headers_a,
-                                 json={"question": "What were today's sales?", "conversation_id": conversation["id"]})
+                                 json={"question": "What were today's sales?", "conversation_id": conversation["id"],
+                                       "response_language": "hi"})
             assert answer.status_code == 200
             assert answer.json()["grounded"] is True
+            assert "आज" in answer.json()["answer"]
             assert len(client.get(f"/api/v1/conversations/{conversation['id']}/messages", headers=headers_a).json()) == 2
+
+            settings.elevenlabs_api_key = "test-elevenlabs-key"
+            monkeypatch.setattr("app.providers.get_elevenlabs_voices", lambda: (
+                [{"voice_id": "test-voice", "name": "Test voice", "category": "voice",
+                  "accent": "", "gender": ""}], "test-voice"))
+            voices = client.get("/api/v1/assistant/voices", headers=headers_a)
+            assert voices.status_code == 200
+            assert voices.json()["default_voice_id"] == "test-voice"
+            monkeypatch.setattr("app.providers.generate_elevenlabs_speech",
+                                lambda text, voice_id=None: b"ID3-test-audio")
+            speech = client.post("/api/v1/assistant/speech", headers=headers_a,
+                                 json={"text": "Hello", "voice_id": "test-voice"})
+            assert speech.status_code == 200
+            assert speech.headers["content-type"] == "audio/mpeg"
+            assert speech.content == b"ID3-test-audio"
+
             proposal = client.post("/api/v1/approvals", headers=headers_a,
                                    json={"kind": "purchase_order", "payload": {"reference": "PO-1"}}).json()
             decision = client.post(f"/api/v1/approvals/{proposal['id']}/decision?decision=approve", headers=headers_a).json()
@@ -106,5 +130,6 @@ def test_tenant_scoped_workflows_and_approval_boundary():
         api.dependency_overrides.clear()
         settings.session_signing_key = old_key
         settings.app_env = old_env
+        settings.elevenlabs_api_key = old_elevenlabs_key
         Base.metadata.drop_all(engine)
         engine.dispose()

@@ -1,12 +1,15 @@
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import { Card, Note, Screen } from '@/components/Screen';
-import { api, Sales } from '@/services/api';
+import { api } from '@/services/api';
 import { colors } from '@/theme/tokens';
 import { isDemoBuild } from '@/services/demo';
 
 type Transaction = {id: string; amount: string; status: string; payment_method: string; occurred_at: string};
+type Briefing = {insights: Array<{kind: string; text: string}>; data_available: boolean; source: string; collections: string; successful_transactions: number; collections_are_not_profit: boolean};
 const prompts = [
   {label: 'आज कितनी कमाई हुई?', question: "How much did I collect today?"},
   {label: 'Who owes payment?', question: 'What settlements are pending?'},
@@ -14,9 +17,15 @@ const prompts = [
 ];
 
 export default function Home() {
-  const sales = useQuery({queryKey: ['sales', 1], queryFn: () => api<Sales>('/dashboard/sales?days=1')});
+  const [briefLanguage, setBriefLanguage] = useState<'en' | 'hi'>('en');
+  useEffect(() => {
+    SecureStore.getItemAsync('assistant_language').then(value => {
+      if (value === 'hi-IN') setBriefLanguage('hi');
+    }).catch(() => {});
+  }, []);
   const transactions = useQuery({queryKey: ['transactions', 6], queryFn: () => api<Transaction[]>('/transactions?limit=6')});
-  const total = sales.data ? money(sales.data.collection_total) : '—';
+  const briefing = useQuery({queryKey: ['daily-briefing', briefLanguage], queryFn: () => api<Briefing>(`/dashboard/briefing?language=${briefLanguage}`)});
+  const total = briefing.data ? money(briefing.data.collections) : '—';
   return <Screen title="Paytm AI Business" subtitle="Your merchant workspace">
     <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2}}>
       <View style={{flex: 1}}>
@@ -24,7 +33,7 @@ export default function Home() {
         <Text style={{fontSize: 18, fontWeight: '700', color: colors.navy}}>Store overview</Text>
       </View>
       <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
-        <View style={{backgroundColor: '#E4F5ED', borderWidth: 1, borderColor: '#B9E3CF', borderRadius: 20, paddingHorizontal: 11, paddingVertical: 7}}><Text style={{fontSize: 12, fontWeight: '700', color: colors.green}}>● Voice ready</Text></View>
+        <View style={{backgroundColor: '#EAF4FF', borderWidth: 1, borderColor: '#D6E8FB', borderRadius: 20, paddingHorizontal: 11, paddingVertical: 7}}><Text style={{fontSize: 12, fontWeight: '700', color: colors.blue}}>Voice assistant</Text></View>
         <Pressable onPress={() => router.push('/(tabs)/profile')} accessibilityRole="button" accessibilityLabel="Open workspace settings" style={{width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: colors.border}}><Text style={{fontSize: 18, color: colors.navy}}>⚙</Text></Pressable>
       </View>
     </View>
@@ -39,11 +48,18 @@ export default function Home() {
           <Text style={{fontSize: 20}}>₹</Text>
         </View>
       </View>
-      {sales.isLoading ? <ActivityIndicator color={colors.blue} /> : sales.isError ? <Note>{sales.error.message}</Note> : <View style={{borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 9}}>
-        <Text style={{fontSize: 13, color: colors.muted}}>{sales.data?.successful_transactions ?? 0} successful payments · {sales.data?.data_available ? 'connected records' : 'no records yet'}</Text>
+      {briefing.isLoading ? <ActivityIndicator color={colors.blue} /> : briefing.isError ? <Note>{briefing.error.message}</Note> : <View style={{borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 9}}>
+        <Text style={{fontSize: 13, color: colors.muted}}>{briefing.data?.successful_transactions ?? 0} successful payments today · {briefing.data?.data_available ? 'connected records' : 'no records yet'}</Text>
         <Text style={{fontSize: 11, color: colors.muted, marginTop: 4}}>{isDemoBuild ? 'Fictional sample records' : 'Collections are not profit.'}</Text>
       </View>}
     </View>
+
+    <Card title={briefLanguage === 'hi' ? 'आज का व्यापार सार' : 'Daily business briefing'}>
+      {briefing.isLoading ? <ActivityIndicator color={colors.blue} /> : briefing.isError ? <Note>{briefing.error.message}</Note> : <View style={{gap: 8}}>
+        {briefing.data?.insights.map((insight, index) => <Text key={`${insight.kind}-${index}`} style={{fontSize: 13, lineHeight: 19, color: colors.ink}}>• {insight.text}</Text>)}
+        <Text style={{fontSize: 10, color: colors.muted}}>{briefing.data?.source} · {briefing.data?.collections_are_not_profit ? 'Collections are not profit.' : ''}</Text>
+      </View>}
+    </Card>
 
     <View style={{alignItems: 'center', paddingTop: 8, paddingBottom: 4}}>
       <Pressable onPress={() => router.push({pathname: '/assistant', params: {autostart: 'true'}})} accessibilityRole="button" accessibilityLabel="Start voice conversation with your AI business partner" style={{width: 126, height: 126, alignItems: 'center', justifyContent: 'center', borderRadius: 64, backgroundColor: '#E4F6FE', borderWidth: 1, borderColor: '#C2EFFF'}}>
@@ -52,7 +68,7 @@ export default function Home() {
         </View>
       </Pressable>
       <Text style={{fontSize: 18, fontWeight: '800', color: colors.navy, textAlign: 'center', marginTop: 13}}>Talk to your AI business partner</Text>
-      <Text style={{fontSize: 13, color: colors.muted, marginTop: 4, textAlign: 'center'}}>Ask in Hindi, Hinglish, or English</Text>
+      <Text style={{fontSize: 13, color: colors.muted, marginTop: 4, textAlign: 'center'}}>Ask in English or Hindi</Text>
       <View style={{flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 14}}>
         {prompts.map(prompt => <Pressable key={prompt.question} onPress={() => router.push({pathname: '/assistant', params: {question: prompt.question}})} style={{backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 9}}>
           <Text style={{fontSize: 12, fontWeight: '600', color: colors.navy}}>{prompt.label}</Text>

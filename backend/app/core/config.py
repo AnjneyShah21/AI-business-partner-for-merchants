@@ -1,6 +1,13 @@
 from functools import lru_cache
+from pathlib import Path
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+load_dotenv(PROJECT_ROOT / ".env.local", override=False)
+load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 
 class Settings(BaseSettings):
@@ -17,7 +24,12 @@ class Settings(BaseSettings):
     elevenlabs_voice_id: str = ""
     elevenlabs_model: str = "eleven_multilingual_v2"
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Compose injects deployment secrets as environment variables. For local backend
+    # runs, also load the root project env files (ElevenLabs onboarding writes .env.local).
+    model_config = SettingsConfigDict(
+        env_file=(".env", str(PROJECT_ROOT / ".env"), str(PROJECT_ROOT / ".env.local")),
+        extra="ignore",
+    )
 
     @property
     def origins(self) -> list[str]:

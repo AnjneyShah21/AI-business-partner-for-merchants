@@ -19,7 +19,8 @@ import { isDemoBuild } from '@/services/demo';
 
 type Answer = components['schemas']['AssistantResponse'];
 type ChatMessage = {id: string; role: string; content: string; sources: string[]};
-const sampleQuestions = ["How much did I collect today?", 'What settlements are pending?', 'Which products need reordering?'];
+const englishQuestions = ["How much did I collect today?", 'What settlements are pending?', 'Which products need reordering?'];
+const hindiQuestions = ['आज कितना कलेक्शन हुआ?', 'कितने सेटलमेंट लंबित हैं?', 'किन चीज़ों का स्टॉक कम है?'];
 
 export default function Assistant() {
   const params = useLocalSearchParams<{question?: string; autostart?: string}>();
@@ -66,6 +67,11 @@ export default function Assistant() {
   });
 
   useEffect(() => { SecureStore.getItemAsync('conversation_id').then(setConversationId).catch(() => {}); }, []);
+  useEffect(() => {
+    SecureStore.getItemAsync('assistant_language').then(value => {
+      if (value === 'hi-IN') setSpeechLanguage('hi-IN');
+    }).catch(() => {});
+  }, []);
   useEffect(() => { SecureStore.getItemAsync('elevenlabs_voice_id').then(value => { if (value) setVoiceId(value); }).catch(() => {}); }, []);
   useEffect(() => {
     if (!routeHandled.current && params.question) {
@@ -179,7 +185,11 @@ export default function Assistant() {
         const conversation = await api<{id: string}>('/conversations', {method: 'POST'});
         id = conversation.id; setConversationId(id); await SecureStore.setItemAsync('conversation_id', id);
       }
-      const answer = await api<Answer>('/assistant/query', {method: 'POST', body: JSON.stringify({question: parsed.data.question, conversation_id: id})});
+      const answer = await api<Answer>('/assistant/query', {method: 'POST', body: JSON.stringify({
+        question: parsed.data.question,
+        conversation_id: id,
+        response_language: speechLanguage === 'hi-IN' ? 'hi' : 'en',
+      })});
       reset({question: ''});
       await queryClient.invalidateQueries({queryKey: ['conversation', id]});
       if (voiceReplies) void speakAnswer(answer.answer, `latest-${Date.now()}`);
@@ -211,7 +221,7 @@ export default function Assistant() {
     <Pressable onPress={() => router.back()} accessibilityRole="button" style={{alignSelf: 'flex-start', paddingVertical: 5}}><Text style={{fontSize: 13, fontWeight: '700', color: colors.blue}}>← Back to dashboard</Text></Pressable>
     <View style={{backgroundColor: '#EAF4FF', borderColor: '#D6E8FB', borderWidth: 1, borderRadius: 18, padding: 15, gap: 6}}>
       <Text style={{fontSize: 12, fontWeight: '800', color: colors.blue}}>VOICE REPLIES · {speechLoading ? 'PREPARING AUDIO…' : isDemoBuild ? 'DEVICE VOICE' : activeVoice?.name ?? 'ELEVENLABS'}</Text>
-      <Text style={{fontSize: 12, lineHeight: 18, color: colors.muted}}>{isDemoBuild ? 'This offline sample uses Android text-to-speech. Connect the backend to select an ElevenLabs voice.' : voices.isError ? 'ElevenLabs is not configured yet. Add its key to the backend environment to enable voice choices.' : 'Replies can be spoken with an ElevenLabs voice. Your API key stays on the backend.'}</Text>
+      <Text style={{fontSize: 12, lineHeight: 18, color: colors.muted}}>{isDemoBuild ? 'This offline sample uses Android text-to-speech. Connect the backend to select an ElevenLabs voice.' : voices.isError ? 'ElevenLabs voice choices are unavailable. Check the backend setup and restart the API.' : 'Replies can be spoken with an ElevenLabs voice. Your API key stays on the backend.'}</Text>
     </View>
 
     {!isDemoBuild && voices.data?.voices.length ? <View style={{gap: 8}}>
@@ -224,8 +234,8 @@ export default function Assistant() {
         <Text style={{fontSize: 35, color: '#FFFFFF'}}>{listening ? '■' : '🎙'}</Text>
       </Pressable>
       <Text style={{fontSize: 16, fontWeight: '800', color: colors.navy, marginTop: 10}}>{listening ? 'Listening…' : 'Tap to speak'}</Text>
-      <Text style={{fontSize: 12, color: colors.muted, marginTop: 4}}>English, Hindi, or Hinglish</Text>
-      <View style={{flexDirection: 'row', gap: 8, marginTop: 10}}>{[{label: 'English / Hinglish', value: 'en-IN' as const}, {label: 'हिन्दी', value: 'hi-IN' as const}].map(option => <Pressable key={option.value} onPress={() => setSpeechLanguage(option.value)} style={{paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, backgroundColor: speechLanguage === option.value ? '#EAF4FF' : colors.card, borderWidth: 1, borderColor: speechLanguage === option.value ? colors.blue : colors.border}}><Text style={{fontSize: 11, fontWeight: '700', color: speechLanguage === option.value ? colors.blue : colors.muted}}>{option.label}</Text></Pressable>)}</View>
+      <Text style={{fontSize: 12, color: colors.muted, marginTop: 4}}>Voice input and replies support English and Hindi.</Text>
+      <View style={{flexDirection: 'row', gap: 8, marginTop: 10}}>{[{label: 'English', value: 'en-IN' as const}, {label: 'हिन्दी', value: 'hi-IN' as const}].map(option => <Pressable key={option.value} onPress={() => { setSpeechLanguage(option.value); void SecureStore.setItemAsync('assistant_language', option.value); }} style={{paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, backgroundColor: speechLanguage === option.value ? '#EAF4FF' : colors.card, borderWidth: 1, borderColor: speechLanguage === option.value ? colors.blue : colors.border}}><Text style={{fontSize: 11, fontWeight: '700', color: speechLanguage === option.value ? colors.blue : colors.muted}}>{option.label}</Text></Pressable>)}</View>
     </View>
 
     <Card title="Ask a question">
@@ -246,6 +256,6 @@ export default function Assistant() {
     </Card>)}
     {busy ? <ActivityIndicator color={colors.blue} /> : null}
     <Text style={{fontSize: 11, lineHeight: 17, color: colors.muted}}>Try asking</Text>
-    <View style={{gap: 7}}>{sampleQuestions.map(question => <Pressable key={question} onPress={() => { setValue('question', question, {shouldDirty: true}); void submitQuestion(question); }} style={{borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.card, paddingHorizontal: 12, paddingVertical: 10}}><Text style={{fontSize: 12, color: colors.navy}}>✦  {question}</Text></Pressable>)}</View>
+    <View style={{gap: 7}}>{(speechLanguage === 'hi-IN' ? hindiQuestions : englishQuestions).map(question => <Pressable key={question} onPress={() => { setValue('question', question, {shouldDirty: true}); void submitQuestion(question); }} style={{borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.card, paddingHorizontal: 12, paddingVertical: 10}}><Text style={{fontSize: 12, color: colors.navy}}>✦  {question}</Text></Pressable>)}</View>
   </Screen>;
 }

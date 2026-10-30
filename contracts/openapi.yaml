@@ -734,6 +734,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /dashboard/briefing:
+    get:
+      summary: Dashboard Briefing
+      description: Localized, read-only merchant summary from recorded business data.
+      operationId: dashboard_briefing_dashboard_briefing_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: language
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [en, hi]
+          default: en
+          title: Language
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /transactions:
     get:
       summary: Transactions
@@ -1021,6 +1049,14 @@ components:
           - type: string
           - type: 'null'
           title: Conversation Id
+        response_language:
+          anyOf:
+          - type: string
+            enum:
+            - en
+            - hi
+          - type: 'null'
+          title: Response Language
       type: object
       required:
       - question

@@ -475,6 +475,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard/briefing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dashboard Briefing
+         * @description Localized, read-only merchant summary from recorded business data.
+         */
+        get: operations["dashboard_briefing_dashboard_briefing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/transactions": {
         parameters: {
             query?: never;
@@ -663,6 +683,8 @@ export interface components {
             question: string;
             /** Conversation Id */
             conversation_id?: string | null;
+            /** Response Language */
+            response_language?: ("en" | "hi") | null;
         };
         /** AssistantResponse */
         AssistantResponse: {
@@ -1892,6 +1914,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SalesSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_briefing_dashboard_briefing_get: {
+        parameters: {
+            query?: {
+                language?: "en" | "hi";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
