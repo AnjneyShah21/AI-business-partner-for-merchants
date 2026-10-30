@@ -82,7 +82,7 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
   let changed = false;
 
   if (route === '/dashboard/sales') {
-    result = { currency: 'INR', collection_total: '4710.00', successful_transactions: 5, refunds_total: '199.00', pending_settlements: '3210.00', source: 'fictional demo records', as_of: now(), data_available: true };
+    result = { currency: 'INR', collection_total: '2650.00', successful_transactions: 3, refunds_total: '199.00', pending_settlements: '3210.00', source: 'fictional demo records', as_of: now(), data_available: true };
   } else if (route === '/transactions' && method === 'GET') result = state.transactions;
   else if (route === '/cashflow/settlements') result = state.settlements;
   else if (route === '/cashflow/forecast') result = { known_pending_receipts_next_24h: '3210.00', settlement_count: 1, forecast_type: 'sample expected dates', assumptions: ['Fictional records only.'], uncertainty: 'Not a guaranteed receipt.' };
@@ -129,9 +129,9 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
     { key: 'otp', purpose: 'merchant authentication', status: 'demo_only', prerequisite: 'This sample workspace does not authenticate a Paytm account.' },
     { key: 'llm', purpose: 'AI assistant', status: 'demo_only', prerequisite: 'Answers use demo rules and records, not a live AI provider.' },
   ];
-  else if (route === '/analytics/period-comparison') result = { current_days: Number(url.searchParams.get('days') ?? 7), current_collections: '4710.00', previous_collections: '1590.00', change_percent: '196.23', comparison_available: true, metric: 'fictional successful collections; not revenue or profit' };
+  else if (route === '/analytics/period-comparison') result = { current_days: Number(url.searchParams.get('days') ?? 7), current_collections: '2650.00', previous_collections: '2060.00', change_percent: '28.64', comparison_available: true, metric: 'fictional successful collections; not revenue or profit' };
   else if (route === '/analytics/peak-hours') result = { period_days: Number(url.searchParams.get('days') ?? 30), hours: [{ hour: 9, successful_transactions: 8 }, { hour: 13, successful_transactions: 12 }, { hour: 18, successful_transactions: 17 }, { hour: 20, successful_transactions: 11 }], source: 'fictional demo records' };
-  else if (route === '/analytics/anomalies') result = { available: true, alerts: [{ type: 'collection_spike', priority: 'medium', change_percent: '196.23', action: 'Sample trend only. Review real records before acting.' }], method: 'sample comparison', collections_are_not_profit: true };
+  else if (route === '/analytics/anomalies') result = { available: true, alerts: [], method: 'sample comparison; no alert threshold crossed', collections_are_not_profit: true };
   else if (route === '/conversations' && method === 'POST') { const conversationId = id('conversation'); state.conversations[conversationId] = []; result = { id: conversationId, title: 'Business assistant', created_at: now() }; changed = true; }
   else if (/^\/conversations\/[^/]+\/messages$/.test(route) && method === 'GET') result = state.conversations[route.split('/')[2]] ?? [];
   else if (route === '/assistant/query' && method === 'POST') {
@@ -142,7 +142,7 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
       : /settlement|cash ?flow|payout/i.test(question)
         ? 'The sample workspace shows ₹3,210 pending across one fictional settlement. This is not a real payout or guaranteed receipt.'
         : /sale|collect|today|revenue/i.test(question)
-          ? 'The sample workspace shows ₹4,710 in fictional successful collections today, across 5 sample payments, with ₹199 in sample refunds. This is not your real business data or profit.'
+          ? 'The sample workspace shows ₹2,650 in fictional successful collections in the last 24 hours, across 3 sample payments, with ₹199 in sample refunds. This is not your real business data or profit.'
           : 'I’m the sample assistant. I can summarize the fictional sales, settlement, and stock records shown in this demo. No Paytm data or live AI provider is connected.';
     history.push({ id: id('message'), role: 'user', content: question, sources: [], created_at: now() }, { id: id('message'), role: 'assistant', content: answer, sources: ['fictional demo records; not live AI'], created_at: now() });
     state.conversations[conversationId] = history; result = { answer, sources: ['fictional demo records; not live AI'], grounded: true }; changed = true;
