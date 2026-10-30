@@ -4,15 +4,15 @@
     "slug": "business-partner",
     "scheme": "businesspartner",
     "version": "0.1.0",
-  "icon": "./assets/icon.png",
+    "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "in.merchant.businesspartner",
-    "adaptiveIcon": {
-      "foregroundImage": "./assets/adaptive-icon.png",
-      "backgroundColor": "#1769E0"
-    },
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1769E0"
+      },
       "permissions": []
     },
     "plugins": [
@@ -29,6 +29,16 @@
           "backgroundColor": "#F4F7FB"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "f32f97ff-9ae9-4700-9357-20b6a3527fe4"
+      }
+    }
   }
 }

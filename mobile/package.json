@@ -27,7 +27,8 @@
     "expo-status-bar": "^58.0.4",
     "i18next": "^26.5.12",
     "papaparse": "^5.7.0",
-    "react": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "react-hook-form": "^7.91.0",
     "react-i18next": "^17.1.9",
     "react-native": "0.88.1",
@@ -43,6 +44,6 @@
   "devDependencies": {
     "@types/react": "~19.3.0",
     "openapi-typescript": "^7.13.0",
-    "typescript": "~6.0.3"
+    "typescript": "~5.9.3"
   }
 }
