@@ -84,3 +84,14 @@ The web service keeps `PROVIDER_MODE=sandbox`; this branch does not have a live 
 ## Security and deployment
 
 The browser bundle contains no provider secrets or service-role key. The API bearer token is held in memory only and disappears on reload. Configure HTTPS, production CORS allowlists, CSP, monitoring, identity project/provider delivery, and a generated lockfile before release. The app adds baseline security headers; the hosting edge should enforce the final CSP and transport policy.
+
+## Deploy the frontend to Vercel
+
+Import this repository into Vercel with the `web` branch, repository root (`./`), and the Next.js framework preset. Set these project environment variables before deploying:
+
+- `NEXT_PUBLIC_API_BASE_URL=https://paytm-saathi-web-api.onrender.com`
+- `NEXT_PUBLIC_SUPABASE_URL`: the Supabase Project URL
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`: the Supabase publishable key
+- `ELEVENLABS_API_KEY`: optional; used by the server-side voice routes
+
+The backend remains a separate Render service. If the Vercel domain changes, update `CORS_ORIGINS` in the Render Blueprint and sync it before testing browser API calls.
