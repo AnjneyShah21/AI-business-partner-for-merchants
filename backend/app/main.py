@@ -426,17 +426,31 @@ def decide_proposal(proposal_id: str, decision: str = Query(pattern="^(approve|r
 def parse_receivable_request(question: str, hindi: bool) -> dict | None:
     q = question.casefold()
     write_intent = bool(re.search(
-        r"\b(?:keep|mark|record|add|note|set|make|leave|put)\b|रख(?:ो|ें)?|लिख(?:ो|ें)?|दर्ज(?:़)?\s+कर|जोड़(?:ो|ें)?",
+        r"\b(?:keep|mark|record|add|note|set|make|leave|put|create|enter)\b"
+        r"|रख(?:ो|ें|ना)?|रख\s+(?:दो|दीजिए|लेना)"
+        r"|लिख(?:ो|ें|ना)?|लिख\s+(?:दो|दीजिए)"
+        r"|दर्ज(?:़)?\s*(?:कर(?:ो|ें|ना)?|कर\s+दो)"
+        r"|जोड़(?:ो|ें|ना)?|जोड़\s+(?:दो|दीजिए)"
+        r"|डाल(?:ो|ें|ना)?|डाल\s+(?:दो|दीजिए)"
+        r"|बना(?:ओ|एँ|ना)?|बना\s+(?:दो|दीजिए)"
+        r"|\b(?:rakh|rakhna|rakho|rakhdo|likh|likhna|likho|likhdo|jod|jodna|jodo|daal|dalo|dalna|bana|banao|banaana)\b",
         q, re.IGNORECASE))
     due_intent = bool(re.search(
-        r"\b(?:pending|due|owed|owes|owing|unpaid|outstanding)\b|बाकी|उधार|पेंडिंग|देना\s+है",
+        r"\b(?:pending|due|owed|owes|owing|unpaid|outstanding|receivable|baaki|baki|bakaya|udhaar|udhar)\b"
+        r"|बाक़?ी|बकाया|उधार|उधारी|पेंडिंग|देना\s+है|लेना\s+है",
         q, re.IGNORECASE))
     if not (write_intent and due_intent):
         return None
 
-    # Hindi word order puts the customer's name before "से" and often puts the
-    # amount after it. Let the configured LLM extract that structure rather than
-    # accidentally treating the amount and following words as a person's name.
+    # Parse common English, Devanagari Hindi, and Romanized Hindi forms locally
+    # first. This keeps a clear write request out of the general Q&A path and
+    # avoids relying on the model to extract a simple name and numeric amount.
+    draft = _receivable_draft_from_text(question)
+    if draft:
+        return {"draft": draft}
+
+    # Hindi word order varies more widely; use the configured model for an
+    # incomplete or less common structure, but never save without confirmation.
     if hindi or re.search(r"[\u0900-\u097F]", question):
         if get_settings().model_provider.casefold() in {"ollama", "cloudflare"}:
             from app.providers import parse_receivable_command
@@ -447,32 +461,54 @@ def parse_receivable_request(question: str, hindi: bool) -> dict | None:
             return {"draft": draft}
         return {"draft": None}
 
-    normalized = question.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
-    amount_match = re.search(r"(?:₹|rs\.?\s*)?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:rupees?|रुपये|रुपया|inr)?", normalized, re.IGNORECASE)
-    name_match = re.search(
-        r"\b(?:from|by|of|से)\s+(?:(?:mr|mrs|ms|shri|smt)\.?\s+|श्री\s+|श्रीमती\s+)?([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F .'-]{1,100})",
-        normalized, re.IGNORECASE)
-
-    draft = None
-    if amount_match and name_match:
-        amount_text = amount_match.group(1).replace(",", "")
-        raw_name = re.split(r"\b(?:as|because|which|that|who|when|until|on)\b|[,.!?;]", name_match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
-        customer_name = " ".join(raw_name.split()).strip(" .,-")
-        customer_name = re.sub(r"^(?:mr|mrs|ms|shri|smt)\.?\s+", "", customer_name, flags=re.IGNORECASE)
-        try:
-            amount = Decimal(amount_text).quantize(Decimal("0.01"))
-            if customer_name and amount > 0 and amount <= Decimal("999999999999.99"):
-                draft = {"customer_name": customer_name[:180], "amount": amount, "note": None}
-        except InvalidOperation:
-            draft = None
-
-    if draft is None and get_settings().model_provider.casefold() in {"ollama", "cloudflare"}:
+    if get_settings().model_provider.casefold() in {"ollama", "cloudflare"}:
         from app.providers import parse_receivable_command
         try:
             draft = parse_receivable_command(question, "hi" if hindi else "en")
         except RuntimeError:
             draft = None
     return {"draft": draft}
+
+
+def _receivable_draft_from_text(question: str) -> dict | None:
+    normalized = question.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+    amount_match = re.search(
+        r"(?:₹|rs\.?\s*)?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:rupees?|रुपये|रुपया|रुपए|inr)?",
+        normalized, re.IGNORECASE)
+    if not amount_match:
+        return None
+
+    name_patterns = (
+        r"\b(?:from|by|of|for)\s+(?:(?:mr|mrs|ms|shri|smt)\.?\s+|श्री\s*|श्रीमती\s*)?([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F .'-]{0,80})",
+        r"([\u0900-\u097F][\u0900-\u097F .'-]{0,50}?)\s+(?:के\s+नाम|के\s+लिए|से|का|की|के)(?=\s|$)",
+        r"([A-Za-z][A-Za-z .'-]{0,50}?)\s+(?:ke\s+naam|ke\s+liye|se|ka|ki|ke)(?=\s|$)",
+    )
+    raw_name = None
+    for pattern in name_patterns:
+        name_match = re.search(pattern, normalized, re.IGNORECASE)
+        if name_match:
+            raw_name = re.split(
+                r"\b(?:as|because|which|that|who|when|until|on|pending|due|owed|baki|baaki|bakaya|udhar|udhaar|rakh|rakhna|rakho|rakhdo|likh|likhna|likho|likhdo|jodo|dalo|daalo|banao)\b"
+                r"|बाक़?ी|बकाया|उधार|उधारी|पेंडिंग|रख|लिख|दर्ज|जोड़|डाल|बन|[,.!?;]",
+                name_match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
+            break
+    if not raw_name:
+        return None
+
+    customer_name = " ".join(raw_name.split()).strip(" .,-")
+    customer_name = re.sub(
+        r"^(?:(?:please|keep|mark|record|add|note|set|make|leave|put|create|enter)\s+|"
+        r"(?:रखो?|रखना|लिखो?|लिखना|दर्ज|जोड़ो?|डालो?|बनाओ?)\s+|"
+        r"(?:rakh(?:na|o|do)?|likh(?:na|o|do)?|jod(?:na|o)?|daal|dalo|banao)\s+)+",
+        "", customer_name, flags=re.IGNORECASE)
+    customer_name = re.sub(r"^(?:mr|mrs|ms|shri|smt)\.?\s+|^(?:श्रीमान|श्रीमती|श्री)\s*", "", customer_name, flags=re.IGNORECASE)
+    try:
+        amount = Decimal(amount_match.group(1).replace(",", "")).quantize(Decimal("0.01"))
+        if customer_name and amount > 0 and amount <= Decimal("999999999999.99"):
+            return {"customer_name": customer_name[:180], "amount": amount, "note": None}
+    except InvalidOperation:
+        pass
+    return None
 
 
 def assistant_business_context(actor, db: Session) -> dict:
