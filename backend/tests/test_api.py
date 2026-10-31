@@ -1,12 +1,13 @@
 from fastapi.testclient import TestClient
 from datetime import datetime, timezone
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import get_settings
 from app.core.db import Base, get_db
 from app.main import api, app
+from app.models import Merchant
 
 
 def test_tenant_scoped_workflows_and_approval_boundary(monkeypatch):
@@ -132,6 +133,22 @@ def test_tenant_scoped_workflows_and_approval_boundary(monkeypatch):
             assert foreign.status_code == 404
             assert client.get("/api/v1/me").status_code == 401
             assert client.get("/api/v1/openapi.json").status_code == 200
+
+            missing_confirmation = client.delete("/api/v1/account", headers=headers_a)
+            assert missing_confirmation.status_code == 422
+            deleted = client.request("DELETE", "/api/v1/account", headers=headers_a,
+                                     json={"confirm": True})
+            assert deleted.status_code == 200 and deleted.json() == {"deleted": True}
+            assert client.get("/api/v1/me", headers=headers_a).status_code == 403
+            with TestingSession() as db:
+                assert db.get(Merchant, merchant_a["id"]) is None
+                for table in Base.metadata.sorted_tables:
+                    if table.name != "merchants" and "merchant_id" in table.c:
+                        remaining = db.scalar(select(func.count()).select_from(table).where(
+                            table.c.merchant_id == merchant_a["id"]))
+                        assert remaining == 0, f"{table.name} still contains deleted merchant records"
+                assert db.scalar(select(func.count()).select_from(Base.metadata.tables["messages"])) == 0
+                assert db.get(Merchant, merchant_b["id"]) is not None
     finally:
         api.dependency_overrides.clear()
         settings.session_signing_key = old_key

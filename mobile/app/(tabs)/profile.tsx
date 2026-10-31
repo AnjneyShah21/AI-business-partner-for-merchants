@@ -1,5 +1,5 @@
 import {Card, Note, Screen} from '@/components/Screen';
-import {Pressable, Text, View} from 'react-native';
+import {Alert, Pressable, Text, View} from 'react-native';
 import {Link, router} from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import {colors} from '@/theme/tokens';
@@ -22,6 +22,31 @@ export default function Profile() {
     await SecureStore.deleteItemAsync('session_token');
     await SecureStore.deleteItemAsync('conversation_id');
     router.replace('/');
+  }
+
+  function confirmDeleteAccount() {
+    Alert.alert(
+      'Delete merchant account?',
+      'This permanently deletes the merchant workspace and its transactions, pending dues, inventory, customers, and assistant history from the connected database. This cannot be undone.',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {text: 'Delete account', style: 'destructive', onPress: () => { void deleteAccount(); }},
+      ],
+    );
+  }
+
+  async function deleteAccount() {
+    try {
+      await api<{deleted: boolean}>('/account', {method: 'DELETE', body: JSON.stringify({confirm: true})});
+      await stopBackgroundSaathi().catch(() => {});
+      await GoogleSignin.signOut().catch(() => {});
+      queryClient.clear();
+      await SecureStore.deleteItemAsync('session_token');
+      await SecureStore.deleteItemAsync('conversation_id');
+      router.replace('/');
+    } catch (error) {
+      Alert.alert('Account not deleted', error instanceof Error ? error.message : 'The merchant account could not be deleted.');
+    }
   }
 
   return <Screen title="Business profile" subtitle="Workspace, services and security">
@@ -50,6 +75,7 @@ export default function Profile() {
     <Card title="Language & accessibility"><Note>English and Hindi voice questions use Android speech recognition. Spoken replies use your selected ElevenLabs voice when configured, with Android text-to-speech as fallback.</Note></Card>
     <ProviderStatus/>
     <Pressable onPress={signOut} accessibilityRole="button" style={{padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#F0CACA', backgroundColor: '#FFF8F8', alignItems: 'center'}}><Text style={{fontWeight: '800', color: colors.red}}>Log out</Text></Pressable>
+    {!sampleWorkspace ? <Pressable onPress={confirmDeleteAccount} accessibilityRole="button" style={{padding: 15, borderRadius: 16, borderWidth: 1, borderColor: colors.red, alignItems: 'center'}}><Text style={{fontWeight: '800', color: colors.red}}>Delete merchant account</Text></Pressable> : null}
   </Screen>;
 }
 

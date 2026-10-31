@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -77,6 +77,10 @@ class GoogleSignInRequest(BaseModel):
     id_token: str = Field(min_length=1, max_length=8192)
 
 
+class DeleteAccountRequest(BaseModel):
+    confirm: Literal[True]
+
+
 @api.post("/auth/google")
 def google_sign_in(body: GoogleSignInRequest, db: Session = Depends(get_db)):
     if not cfg.google_oauth_client_id:
@@ -138,6 +142,37 @@ def local_session(merchant_id: str, db: Session = Depends(get_db)):
 @api.get("/me")
 def me(actor=Depends(current_actor)):
     return actor
+
+
+@api.delete("/account")
+def delete_account(body: DeleteAccountRequest, actor=Depends(current_actor), db: Session = Depends(get_db)):
+    """Permanently remove the owner's merchant workspace and its business records."""
+    if actor["role"] != "owner":
+        raise HTTPException(403, "Only the merchant account owner can delete this workspace")
+
+    merchant_id = actor["merchant_id"]
+    merchant = db.get(Merchant, merchant_id)
+    if merchant is None:
+        raise HTTPException(404, "Merchant account not found")
+
+    # Messages have no merchant_id of their own, so remove them through the
+    # merchant's conversations before deleting the merchant-scoped tables.
+    conversation_ids = select(Conversation.id).where(Conversation.merchant_id == merchant_id)
+    db.execute(delete(Message).where(Message.conversation_id.in_(conversation_ids)))
+
+    # Delete child tables first (e.g. movements before products and staff before
+    # stores). Explicit deletion also works with SQLite, where FK cascades may
+    # not be enabled by the local development database connection.
+    try:
+        for table in reversed(Base.metadata.sorted_tables):
+            if table.name != "merchants" and "merchant_id" in table.c:
+                db.execute(delete(table).where(table.c.merchant_id == merchant_id))
+        db.execute(delete(Merchant).where(Merchant.id == merchant_id))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"deleted": True}
 
 
 class SpeechRequest(BaseModel):

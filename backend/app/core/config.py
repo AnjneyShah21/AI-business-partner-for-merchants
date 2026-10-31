@@ -38,6 +38,16 @@ class Settings(BaseSettings):
     def origins(self) -> list[str]:
         return [item.strip() for item in self.allowed_origins.split(",") if item.strip()]
 
+    @property
+    def sqlalchemy_database_url(self) -> str:
+        # Most hosted Postgres dashboards provide a plain postgresql:// URL,
+        # while this project installs psycopg v3 rather than psycopg2.
+        if self.database_url.startswith("postgres://"):
+            return "postgresql+psycopg://" + self.database_url.removeprefix("postgres://")
+        if self.database_url.startswith("postgresql://"):
+            return "postgresql+psycopg://" + self.database_url.removeprefix("postgresql://")
+        return self.database_url
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -9,6 +9,7 @@ Android merchant operations app and FastAPI service. The project now contains fu
 - `contracts/openapi.yaml`: generated API contract.
 - `docs/`: setup, integration, security and implementation status.
 - `docker-compose.yml`: local PostgreSQL, Redis, Ollama and API.
+- `render.yaml`: free hosted demo API deployment blueprint; PostgreSQL is configured separately.
 - `design/stitch/`: user-provided reference exports for the six app screens.
 
 ## Run locally
