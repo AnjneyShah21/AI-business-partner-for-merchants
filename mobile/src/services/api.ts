@@ -2,7 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import type { components } from '@/api/schema.generated';
 import { demoApi } from '@/services/demo';
 
-const base = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1';
 export type Sales = components['schemas']['SalesSummary'];
 export type Product = components['schemas']['ProductOut'];
 export type ElevenLabsVoice = {voice_id: string; name: string; category: string; accent: string; gender: string};
@@ -11,7 +11,7 @@ export type ElevenLabsVoiceList = {voices: ElevenLabsVoice[]; default_voice_id: 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = await SecureStore.getItemAsync('session_token');
   if (token === 'offline-demo-workspace') return demoApi<T>(path, init);
-  const response = await fetch(`${base}${path}`, { ...init, headers: { 'Content-Type': 'application/json',
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers: { 'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init.headers } });
   if (!response.ok) {
     let detail: string | undefined;
@@ -26,7 +26,7 @@ export async function requestElevenLabsSpeech(text: string, voiceId?: string): P
   if (!token || token === 'offline-demo-workspace') {
     throw new Error('ElevenLabs playback needs a signed-in app connected to the backend.');
   }
-  const response = await fetch(`${base}/assistant/speech`, {
+  const response = await fetch(`${API_BASE_URL}/assistant/speech`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json', Authorization: `Bearer ${token}`},
     body: JSON.stringify({text, ...(voiceId ? {voice_id: voiceId} : {})}),

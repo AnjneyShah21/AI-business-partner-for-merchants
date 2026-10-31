@@ -7,6 +7,7 @@ import {useQuery, useQueryClient} from '@tanstack/react-query';
 import {GoogleSignin} from '@react-native-google-signin/google-signin';
 import {api} from '@/services/api';
 import {useSampleWorkspace} from '@/hooks/useSampleWorkspace';
+import {stopBackgroundSaathi} from '@/services/saathi';
 
 type Capability = {key: string; purpose: string; status: string; prerequisite: string};
 
@@ -15,6 +16,7 @@ export default function Profile() {
   const queryClient = useQueryClient();
 
   async function signOut() {
+    await stopBackgroundSaathi().catch(() => {});
     await GoogleSignin.signOut().catch(() => {});
     queryClient.clear();
     await SecureStore.deleteItemAsync('session_token');

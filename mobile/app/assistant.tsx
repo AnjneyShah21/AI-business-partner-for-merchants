@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import * as Speech from 'expo-speech';
@@ -12,12 +12,14 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card, Note } from '@/components/Screen';
-import { api, ElevenLabsVoiceList, requestElevenLabsSpeech } from '@/services/api';
+import { api, API_BASE_URL, ElevenLabsVoiceList, requestElevenLabsSpeech } from '@/services/api';
 import type { components } from '@/api/schema.generated';
 import { colors } from '@/theme/tokens';
 import { assistantRequestSchema } from '@/utils/validation';
 import { spokenCurrencyText } from '@/utils/spokenCurrency';
 import { useSampleWorkspace } from '@/hooks/useSampleWorkspace';
+import * as Notifications from 'expo-notifications';
+import { isBackgroundSaathiRunning, startBackgroundSaathi, stopBackgroundSaathi } from '@/services/saathi';
 
 type Answer = components['schemas']['AssistantResponse'];
 type ChatMessage = {id: string; role: string; content: string; sources: string[]};
@@ -44,6 +46,8 @@ export default function Assistant() {
   const [pendingDraft, setPendingDraft] = useState<PendingDraft | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
   const [savedDraftMessage, setSavedDraftMessage] = useState('');
+  const [backgroundListening, setBackgroundListening] = useState(false);
+  const [backgroundBusy, setBackgroundBusy] = useState(false);
   const [speechLanguage, setSpeechLanguage] = useState<'en-IN' | 'hi-IN'>('en-IN');
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [voiceId, setVoiceId] = useState<string | undefined>();
@@ -83,6 +87,16 @@ export default function Assistant() {
     }).catch(() => {});
   }, []);
   useEffect(() => { SecureStore.getItemAsync('elevenlabs_voice_id').then(value => { if (value) setVoiceId(value); }).catch(() => {}); }, []);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const refresh = () => {
+      try { setBackgroundListening(isBackgroundSaathiRunning()); }
+      catch { setBackgroundListening(false); }
+    };
+    refresh();
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
+    return () => subscription.remove();
+  }, []);
   useEffect(() => {
     if (!routeHandled.current && params.question) {
       routeHandled.current = true;
@@ -257,6 +271,38 @@ export default function Assistant() {
     } catch (e) { setVoiceError(e instanceof Error ? e.message : 'Could not start voice input.'); }
   }
 
+  async function toggleBackgroundSaathi() {
+    if (backgroundBusy) return;
+    setBackgroundBusy(true);
+    setVoiceError('');
+    try {
+      if (backgroundListening) {
+        await stopBackgroundSaathi();
+        setBackgroundListening(false);
+        return;
+      }
+      if (Platform.OS !== 'android') throw new Error('Background Saathi is available on Android only.');
+      if (sampleWorkspace) throw new Error('Sign in to your merchant account to use background Saathi.');
+      const token = await SecureStore.getItemAsync('session_token');
+      if (!token || token === 'offline-demo-workspace') throw new Error('Sign in to your merchant account before enabling background Saathi.');
+      const microphone = await ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync();
+      if (!microphone.granted) throw new Error('Allow microphone access before enabling background listening.');
+      if (Platform.Version >= 33) {
+        let notificationPermission = await Notifications.getPermissionsAsync();
+        if (!notificationPermission.granted) notificationPermission = await Notifications.requestPermissionsAsync();
+        if (!notificationPermission.granted) throw new Error('Allow notifications so Android can keep Saathi’s microphone service visible and give you a Stop control.');
+      }
+      await startBackgroundSaathi(token, API_BASE_URL, speechLanguage === 'hi-IN' ? 'hi' : 'en', conversationId, voiceId ?? null);
+      setBackgroundListening(true);
+      setVoiceError('Saathi is listening in the background. Android will keep a notification visible; use its Stop button to turn the microphone off.');
+    } catch (e) {
+      setVoiceError(e instanceof Error ? e.message : 'Could not start background Saathi.');
+      try { setBackgroundListening(isBackgroundSaathiRunning()); } catch { setBackgroundListening(false); }
+    } finally {
+      setBackgroundBusy(false);
+    }
+  }
+
   const activeVoice = voiceOptions.find(voice => voice.voice_id === voiceId);
   const close = () => router.canGoBack() ? router.back() : router.replace('/(tabs)/home');
   const listeningLanguage = speechLanguage === 'hi-IN' ? 'Hindi' : 'English';
@@ -279,6 +325,21 @@ export default function Assistant() {
               <Text style={{color: colors.blue, fontSize: 12, fontWeight: '700'}}>Listening in {listeningLanguage}</Text>
               {([{label: 'EN', value: 'en-IN' as const}, {label: 'हिंदी', value: 'hi-IN' as const}]).map(option => <Pressable key={option.value} onPress={() => { setSpeechLanguage(option.value); void SecureStore.setItemAsync('assistant_language', option.value); }} style={{paddingVertical: 4, paddingHorizontal: 9, borderRadius: 13, backgroundColor: speechLanguage === option.value ? colors.navy : 'transparent'}}><Text style={{fontSize: 11, fontWeight: '700', color: speechLanguage === option.value ? '#FFFFFF' : colors.navy}}>{option.label}</Text></Pressable>)}
             </View>
+            {Platform.OS === 'android' ? <View style={{width: '100%', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: backgroundListening ? '#A9E7D0' : '#DAE3F0', borderRadius: 19, padding: 13, gap: 8}}>
+              <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
+                <Text style={{fontSize: 14, fontWeight: '800', color: colors.navy}}>Saathi when the app is closed</Text>
+                <View style={{width: 9, height: 9, borderRadius: 5, backgroundColor: backgroundListening ? colors.green : '#AEB9C8'}}/>
+              </View>
+              <Text style={{fontSize: 12, lineHeight: 17, color: colors.muted}}>{sampleWorkspace
+                ? 'Background questions need a signed-in merchant session. Sign in with Google to enable this on your merchant data.'
+                : backgroundListening
+                  ? 'Background listening is on. Say “Saathi”, then ask your question. The microphone stays active until you stop it.'
+                  : 'Turn this on once, then leave the app. Say “Saathi” followed by your question; the app will answer aloud.'}</Text>
+              <Pressable onPress={() => void toggleBackgroundSaathi()} disabled={backgroundBusy || sampleWorkspace} accessibilityRole="button" style={{backgroundColor: sampleWorkspace ? '#9AA7B8' : backgroundListening ? '#FFF0F0' : colors.navy, borderRadius: 13, padding: 11, alignItems: 'center', opacity: backgroundBusy ? 0.65 : 1}}>
+                <Text style={{fontSize: 13, fontWeight: '800', color: sampleWorkspace ? '#FFFFFF' : backgroundListening ? colors.red : '#FFFFFF'}}>{backgroundBusy ? 'Please wait…' : sampleWorkspace ? 'Sign in to enable background Saathi' : backgroundListening ? 'Stop background listening' : 'Enable background listening'}</Text>
+              </Pressable>
+              <Text style={{fontSize: 10, lineHeight: 15, color: colors.muted}}>Android keeps an ongoing microphone notification while listening. Offline speech recognition is preferred; Android may use its configured speech service if an offline language pack is unavailable. Force stopping the app or restarting the phone ends listening; enable it again from the app afterward.</Text>
+            </View> : null}
             <View style={{height: 118, width: '100%', maxWidth: 310, alignItems: 'center', justifyContent: 'center'}}>
               <View pointerEvents="none" style={{position: 'absolute', width: 190, height: 112, borderRadius: 60, backgroundColor: 'rgba(0,186,242,0.08)', borderWidth: 1, borderColor: 'rgba(0,186,242,0.18)'}}/>
               <View pointerEvents="none" style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, position: 'absolute'}}>
