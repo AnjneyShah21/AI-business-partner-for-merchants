@@ -16,6 +16,7 @@ import { api, ElevenLabsVoiceList, requestElevenLabsSpeech } from '@/services/ap
 import type { components } from '@/api/schema.generated';
 import { colors } from '@/theme/tokens';
 import { assistantRequestSchema } from '@/utils/validation';
+import { spokenCurrencyText } from '@/utils/spokenCurrency';
 import { useSampleWorkspace } from '@/hooks/useSampleWorkspace';
 
 type Answer = components['schemas']['AssistantResponse'];
@@ -23,16 +24,6 @@ type ChatMessage = {id: string; role: string; content: string; sources: string[]
 type PendingDraft = NonNullable<Answer['pending_receivable_draft']> & {idempotency_key: string};
 const englishQuestions = ["How much did I collect today?", 'What settlements are pending?', 'Which products need reordering?'];
 const hindiQuestions = ['आज कितना कलेक्शन हुआ?', 'कितने सेटलमेंट लंबित हैं?', 'किन चीज़ों का स्टॉक कम है?'];
-
-function spokenCurrencyText(text: string) {
-  const unit = /[\u0900-\u097f]/.test(text) ? 'रुपये' : 'rupees';
-  return text
-    .replace(/₹\s*([\d,]+(?:\.\d{1,2})?)/g, `$1 ${unit}`)
-    .replace(/\b(?:Rs\.?|INR)\s*([\d,]+(?:\.\d{1,2})?)/gi, `$1 ${unit}`)
-    .replace(/([\d,]+(?:\.\d{1,2})?)\s*(?:INR|Rs\.?)(?![A-Za-z])/gi, `$1 ${unit}`)
-    .replace(/₹/g, unit)
-    .replace(/\b(?:Rs\.?|INR)\b/gi, unit);
-}
 
 export default function Assistant() {
   const sampleWorkspace = useSampleWorkspace();
