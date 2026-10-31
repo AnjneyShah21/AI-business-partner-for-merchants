@@ -16,6 +16,7 @@ type DemoState = {
   notifications: DemoRecord[];
   transactions: DemoRecord[];
   settlements: DemoRecord[];
+  receivables: DemoRecord[];
   conversations: Record<string, DemoRecord[]>;
 };
 
@@ -57,6 +58,7 @@ function initialState(): DemoState {
       { id: 'settlement-1', amount: '3210.00', status: 'pending', expected_at: day(-18), settled_at: null },
       { id: 'settlement-2', amount: '1840.00', status: 'settled', expected_at: day(30), settled_at: day(26) },
     ],
+    receivables: [],
     conversations: {},
   };
 }
@@ -165,6 +167,21 @@ function demoAssistantAnswer(question: string, state: DemoState, responseLanguag
     return { answer: `Sample stock: ${items.map(product => `${product.name}: ${product.quantity} ${product.unit} (reorder at ${product.reorder_level})`).join('; ')}.`, sources: source };
   }
 
+  if (/who\s+(?:still\s+)?owes|customer\s+due|receivable|pending\s+from|due\s+from|outstanding\s+from|list\s+(?:the\s+)?dues|\budhaar\b|उधार|ग्राहक.*(?:बाकी|बकाया)|किससे.*(?:बाकी|बकाया)|[\u0900-\u097f]+\s+से.*(?:बाकी|बकाया)/.test(q)) {
+    const dues = state.receivables.filter(item => item.status === 'pending');
+    const name = q.match(/\b(?:from|of|by)\s+(?:(?:mr|mrs|ms)\.?\s+)?([a-z][a-z .'-]{1,80})/);
+    const hindiName = q.match(/([\u0900-\u097f]{2,60})\s+(?:से|का|की|के)/);
+    const wanted = name?.[1].trim() ?? hindiName?.[1];
+    const filtered = wanted ? dues.filter(item => String(item.customer_name).toLocaleLowerCase('en-IN').includes(wanted)) : dues;
+    const total = filtered.reduce((sum, item) => sum + Number(item.amount), 0);
+    if (!filtered.length) return {answer: hindi
+      ? 'इस काल्पनिक नमूना कार्यक्षेत्र में कोई मेल खाता लंबित ग्राहक-बकाया दर्ज नहीं है।'
+      : 'No matching customer due is recorded in this fictional sample workspace.', sources: source};
+    return {answer: hindi
+      ? `नमूना रिकॉर्ड में आंतरिक ग्राहक-बकाया कुल ${inr(total)} है (${filtered.length} रिकॉर्ड): ${filtered.map(item => `${item.customer_name}: ${inr(Number(item.amount))}`).join('; ')}। ये नमूना नोट हैं, सत्यापित भुगतान नहीं।`
+      : `Fictional sample customer dues total ${inr(total)} across ${filtered.length} record(s): ${filtered.map(item => `${item.customer_name}: ${inr(Number(item.amount))}`).join('; ')}. These are internal sample notes, not verified payments.`, sources: source};
+  }
+
   if (/settlement|cash ?flow|payout|सेटलमेंट|निपटान|बाकी|पेंडिंग|कितना.*आना/.test(q)) {
     const pending = state.settlements.filter(item => item.status === 'pending');
     const total = pending.reduce((sum, item) => sum + Number(item.amount), 0);
@@ -242,6 +259,25 @@ function demoAssistantAnswer(question: string, state: DemoState, responseLanguag
   }
 
   return { answer: 'I can answer questions about sample collections and refunds, payment methods, pending settlements, stock and reorder levels, customers’ recorded marketing consent, and campaigns. This offline workspace uses fictional records and has no live generative AI provider connected.', sources: source };
+}
+
+function demoReceivableDraft(question: string): {customer_name: string; amount: string; note: string | null} | null {
+  const normalized = question.replace(/[०-९]/g, digit => String('०१२३४५६७८९'.indexOf(digit)));
+  if (!(/\b(?:keep|mark|record|add|note|set|make|leave|put)\b|रख|लिख|दर्ज|जोड़|\brakh(?:o|na|do|lo)?\b/i.test(normalized)) ||
+      !(/\b(?:pending|due|owed|owes|owing|unpaid|outstanding)\b|बाकी|उधार|पेंडिंग|देना\s+है/i.test(normalized))) return null;
+  const amount = normalized.match(/(?:₹|rs\.?\s*)?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:rupees?|inr|रुपये|रुपया)?/i);
+  const person = normalized.match(/\b(?:from|by|of)\s+(?:(?:mr|mrs|ms|shri|smt)\.?\s+)?([a-z][a-z .'-]{1,80})/i);
+  const hindiOrder = normalized.match(/((?:श्री|श्रीमती|श्रीमान)?\s*[\p{L}\p{M}][\p{L}\p{M} .'-]{1,60}?)\s+से\s+(?=(?:₹\s*)?\d)/u);
+  const latinHindiOrder = normalized.match(/([\p{L}][\p{L}\p{M} .'-]{1,60}?)\s+se\s+(?=(?:₹\s*)?\d)/iu);
+  if (!amount || (!person && !hindiOrder && !latinHindiOrder)) return null;
+  let customer_name = person
+    ? person[1].split(/\b(?:as|because|which|that|who|when|until|on)\b|[,.!?;]/i)[0].trim()
+    : (hindiOrder?.[1] ?? latinHindiOrder?.[1] ?? '').trim();
+  customer_name = customer_name.replace(/^(?:श्रीमान|श्रीमती|श्री|smt\.?|shri|mr|mrs|ms)\s+/i, '').replace(/\s+/g, ' ').trim();
+  const numericAmount = Number(amount[1].replaceAll(',', ''));
+  return customer_name && Number.isFinite(numericAmount) && numericAmount > 0
+    ? {customer_name, amount: numericAmount.toFixed(2), note: null}
+    : null;
 }
 
 export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -385,9 +421,31 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
   else if (route === '/assistant/query' && method === 'POST') {
     const conversationId = String(body.conversation_id ?? ''); const history = state.conversations[conversationId] ?? [];
     const question = String(body.question ?? '');
-    const { answer, sources } = demoAssistantAnswer(question, state, String(body.response_language ?? ''));
+    const pending_receivable_draft = demoReceivableDraft(question);
+    const responseHindi = String(body.response_language ?? '') === 'hi' || /[\u0900-\u097f]/.test(question);
+    const formattedAmount = pending_receivable_draft
+      ? Number(pending_receivable_draft.amount).toLocaleString('en-IN', {minimumFractionDigits: 2})
+      : '';
+    const {answer, sources} = pending_receivable_draft
+      ? {answer: responseHindi
+        ? `${pending_receivable_draft.customer_name} के नाम ₹${formattedAmount} का काल्पनिक आंतरिक बकाया नोट सेव करने का प्रस्ताव है। यह भुगतान नहीं है। सेव करने से पहले पुष्टि करें।`
+        : `I can record an internal ₹${formattedAmount} due from ${pending_receivable_draft.customer_name}. This is a fictional sample note, not a payment. Confirm before saving.`, sources: ['fictional sample records']}
+      : demoAssistantAnswer(question, state, String(body.response_language ?? ''));
     history.push({ id: id('message'), role: 'user', content: question, sources: [], created_at: now() }, { id: id('message'), role: 'assistant', content: answer, sources, created_at: now() });
-    state.conversations[conversationId] = history; result = { answer, sources, grounded: true }; changed = true;
+    state.conversations[conversationId] = history; result = { answer, sources, grounded: true, pending_receivable_draft }; changed = true;
+  }
+  else if (route === '/receivables' && method === 'GET') {
+    const requestedStatus = url.searchParams.get('status');
+    result = state.receivables.filter(item => !requestedStatus || item.status === requestedStatus);
+  }
+  else if (route === '/receivables' && method === 'POST') {
+    const existing = state.receivables.find(item => item.idempotency_key === body.idempotency_key);
+    if (existing) result = {...existing, created: false};
+    else {
+      const row = {id: id('receivable'), customer_name: String(body.customer_name).trim(), amount: Number(body.amount).toFixed(2),
+        status: 'pending', note: body.note ?? null, source: 'fictional sample entry', idempotency_key: String(body.idempotency_key), created_at: now()};
+      state.receivables.unshift(row); result = {...row, created: true}; changed = true;
+    }
   }
   else if (route === '/integrations/import/transactions' && method === 'POST') result = { accepted: Array.isArray(body.transactions) ? body.transactions.length : 0, duplicates_skipped: 0, source: 'demo_import', provider_connected: false, message: 'Demo only. No real provider connection was created.' };
   else result = [];

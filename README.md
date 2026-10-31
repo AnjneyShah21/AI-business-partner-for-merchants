@@ -8,26 +8,27 @@ Android merchant operations app and FastAPI service. The project now contains fu
 - `backend/`: FastAPI modular monolith, SQLAlchemy models, Alembic migrations and tests.
 - `contracts/openapi.yaml`: generated API contract.
 - `docs/`: setup, integration, security and implementation status.
-- `docker-compose.yml`: local PostgreSQL, Redis and API.
+- `docker-compose.yml`: local PostgreSQL, Redis, Ollama and API.
+- `design/stitch/`: user-provided reference exports for the six app screens.
 
 ## Run locally
 
 1. Copy `.env.example` to `.env`, replace the signing key with at least 32 random characters.
 2. From the repository root, run `npx -y @elevenlabs/cli@latest onboard init` and follow the sign-in steps. The CLI stores the key in the ignored `.env.local`; do not paste it into chat or Expo config.
-3. Run `docker compose --env-file .env --env-file .env.local up --build` from the repository root. The API migrates its local database on start and receives the key only on the server.
+3. Run `docker compose --env-file .env --env-file .env.local up --build` from the repository root. The API migrates its local database on start and receives the key only on the server. The stack pulls the free local language model on first startup.
 4. Copy `mobile/.env.example` to `mobile/.env`, run `npm ci --legacy-peer-deps` in `mobile/`, then `npx expo start --dev-client`.
 5. Local workspace setup is for development only. Do not enable it in a deployed environment.
 
 After changing backend routes/schemas, regenerate the mobile contract types with `npm run generate:api` from `mobile/`.
 
-The assistant accepts English and Hindi voice input and replies in the selected language. Android provides speech recognition; the authenticated API uses the ElevenLabs Python SDK to return spoken MP3 audio. The API key stays on the backend.
+The assistant accepts English and Hindi voice input and replies in the selected language. The dashboard mic opens a slide-up assistant sheet. Ollama's Qwen3 0.6B model handles general business questions locally; the authenticated API uses the ElevenLabs Python SDK for spoken MP3 replies when enabled, with Android voice fallback. Provider keys stay on the backend.
 
 The API base is `http://localhost:8000/api/v1` (Android emulator: `http://10.0.2.2:8000/api/v1`). Docs are available at `/api/v1/docs` and health at `/api/v1/health`.
 
 ## Implemented workflows
 
-Sales summaries/comparisons, peak-hour and threshold analysis; settlement/cash-flow views; tenant-scoped inventory and stock movement ledger; supplier and purchase order drafts with approval proposals; customer records and consent updates; campaign drafts; provider-originated credit offer display; draft tax summaries; reports availability; staff and store records; persistent deterministic assistant conversations; in-app notification records; and an approval center that never claims execution without a provider confirmation.
+Sales summaries/comparisons, peak-hour and threshold analysis; settlement/cash-flow views; tenant-scoped inventory and stock movement ledger; confirmed internal customer-due notes; supplier and purchase order drafts with approval proposals; customer records and consent updates; campaign drafts; provider-originated credit offer display; draft tax summaries; reports availability; staff and store records; persistent assistant conversations; in-app notification records; and an approval center that never claims execution without a provider confirmation.
 
 ## Production gates
 
-OTP authentication, live payment/settlement ingestion, a merchant-data-capable LLM, validated production voice policies, lender offers/applications, statutory GST filing, campaign delivery, push notifications, durable workers, production observability/backups, compliance review and Android signing credentials still require authorized setup. Capabilities are reported by `/integrations/status`; absent services remain disabled. See [implementation status](docs/STATUS.md), [integration requirements](docs/INTEGRATIONS.md), [security controls](docs/SECURITY.md), and [deployment steps](docs/DEPLOYMENT.md).
+OTP authentication, live payment/settlement ingestion, validation of the local LLM on real workloads, production voice policies, lender offers/applications, statutory GST filing, campaign delivery, push notifications, durable workers, production observability/backups, compliance review and Android signing credentials still require authorized setup. Capabilities are reported by `/integrations/status`; absent services remain unavailable. See [implementation status](docs/STATUS.md), [integration requirements](docs/INTEGRATIONS.md), [security controls](docs/SECURITY.md), and [deployment steps](docs/DEPLOYMENT.md).

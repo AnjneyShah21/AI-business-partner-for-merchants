@@ -8,5 +8,6 @@ export default function TabLayout() {
     <Tabs.Screen name="home" options={{ title: 'Home', tabBarIcon: ({ color }) => <Text style={{color, fontSize: 19}}>⌂</Text> }} />
     <Tabs.Screen name="wallet" options={{ title: 'Wallet', tabBarIcon: ({ color }) => <Text style={{color, fontSize: 17}}>▣</Text> }} />
     <Tabs.Screen name="analytics" options={{ title: 'Graphs', tabBarIcon: ({ color }) => <Text style={{color, fontSize: 17}}>▥</Text> }} />
+    <Tabs.Screen name="profile" options={{ title: 'Profile', tabBarIcon: ({ color }) => <Text style={{color, fontSize: 18}}>♙</Text> }} />
   </Tabs>;
 }

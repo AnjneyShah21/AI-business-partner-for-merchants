@@ -37,10 +37,45 @@ class AssistantRequest(BaseModel):
     response_language: Literal["en", "hi"] | None = None
 
 
+class PendingReceivableDraft(BaseModel):
+    customer_name: str = Field(min_length=1, max_length=180)
+    amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    note: str | None = Field(default=None, max_length=500)
+
+
 class AssistantResponse(BaseModel):
     answer: str
     sources: list[str]
     grounded: bool = True
+    pending_receivable_draft: PendingReceivableDraft | None = None
+
+
+class ReceivableCreate(BaseModel):
+    customer_name: str = Field(min_length=1, max_length=180)
+    amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    note: str | None = Field(default=None, max_length=500)
+    idempotency_key: str = Field(min_length=12, max_length=80)
+
+
+class SalesTimelineBucket(BaseModel):
+    label: str
+    collections: str
+    refunds: str
+    successful_transactions: int
+
+
+class SalesTimeline(BaseModel):
+    period: Literal["day", "week", "month"]
+    timezone: str
+    as_of: datetime
+    start: datetime
+    end: datetime
+    buckets: list[SalesTimelineBucket]
+    collections: str
+    refunds: str
+    successful_transactions: int
+    source: str
+    collections_are_not_profit: bool
 
 
 class ActionCreate(BaseModel):

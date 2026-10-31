@@ -11,7 +11,17 @@ import '@/i18n';
 const client = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
 
 export default function RootLayout() {
-  return <SafeAreaProvider><QueryClientProvider client={client}><RootErrorBoundary><StatusBar style="auto" /><SessionGate><Stack screenOptions={{ headerShown: false }} /></SessionGate></RootErrorBoundary></QueryClientProvider></SafeAreaProvider>;
+  return <SafeAreaProvider><QueryClientProvider client={client}><RootErrorBoundary><StatusBar style="auto" /><SessionGate><Stack screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="assistant" options={{
+      presentation: 'transparentModal',
+      animation: 'slide_from_bottom',
+      contentStyle: {backgroundColor: 'transparent'},
+      gestureEnabled: true,
+      gestureDirection: 'vertical',
+      statusBarTranslucent: true,
+      navigationBarTranslucent: true,
+    }} />
+  </Stack></SessionGate></RootErrorBoundary></QueryClientProvider></SafeAreaProvider>;
 }
 
 function SessionGate({children}:PropsWithChildren){

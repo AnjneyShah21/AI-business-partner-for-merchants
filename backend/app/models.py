@@ -57,6 +57,25 @@ class Settlement(Base):
     settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class Receivable(Base):
+    """Merchant-entered customer dues; these are not payment transactions or settlements."""
+    __tablename__ = "receivables"
+    __table_args__ = (
+        UniqueConstraint("merchant_id", "idempotency_key", name="uq_receivable_merchant_idempotency"),
+        Index("ix_receivable_merchant_status_created", "merchant_id", "status", "created_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id", ondelete="CASCADE"), index=True)
+    customer_name: Mapped[str] = mapped_column(String(180))
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    note: Mapped[str | None] = mapped_column(String(500))
+    source: Mapped[str] = mapped_column(String(32), default="assistant")
+    idempotency_key: Mapped[str] = mapped_column(String(80))
+    created_by: Mapped[str] = mapped_column(String(180))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
 class Product(Base):
     __tablename__ = "products"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))

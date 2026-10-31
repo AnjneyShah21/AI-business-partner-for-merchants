@@ -12,7 +12,7 @@ export type Transaction = {id: string; external_id?: string | null; amount: stri
 type Briefing = {insights: Array<{kind: string; text: string}>; data_available: boolean; source: string; collections: string; successful_transactions: number; collections_are_not_profit: boolean};
 const prompts = [
   {label: 'आज कितनी कमाई हुई?', question: "How much did I collect today?"},
-  {label: 'Who owes payment?', question: 'What settlements are pending?'},
+  {label: 'Who owes me money?', question: 'Who owes me money?'},
   {label: "Show today's total", question: "Show today's total"},
 ];
 
@@ -39,19 +39,19 @@ export default function Home() {
       </View>
     </View>
 
-    <View style={{backgroundColor: colors.card, borderRadius: 20, padding: 18, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 5, borderLeftColor: colors.blue, gap: 11}}>
+    <View style={{backgroundColor: colors.navy, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#164A88', gap: 12, shadowColor: colors.navy, shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: {width: 0, height: 9}, elevation: 5}}>
       <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start'}}>
         <View style={{flex: 1}}>
-          <Text style={{fontSize: 13, fontWeight: '600', color: colors.muted}}>Today's money received</Text>
-          <Text style={{fontSize: 30, fontWeight: '800', color: colors.navy, marginTop: 5}}>₹{total}</Text>
+          <Text style={{fontSize: 13, fontWeight: '700', color: '#B9E9FF'}}>Today's money received</Text>
+          <Text style={{fontSize: 34, fontWeight: '800', color: '#FFFFFF', marginTop: 5}}>₹{total}</Text>
         </View>
-        <View style={{width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E7F0FF'}}>
-          <Text style={{fontSize: 20}}>₹</Text>
+        <View style={{width: 42, height: 42, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,186,242,0.18)', borderWidth: 1, borderColor: 'rgba(128,225,255,0.35)'}}>
+          <Text style={{fontSize: 22, color: colors.cyan}}>₹</Text>
         </View>
       </View>
-      {briefing.isLoading ? <ActivityIndicator color={colors.blue} /> : briefing.isError ? <Note>{briefing.error.message}</Note> : <View style={{borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 9}}>
-        <Text style={{fontSize: 13, color: colors.muted}}>{briefing.data?.successful_transactions ?? 0} successful payments today · {sampleWorkspace ? 'sample CSV records' : briefing.data?.data_available ? 'connected records' : 'no records yet'}</Text>
-        <Text style={{fontSize: 11, color: colors.muted, marginTop: 4}}>{sampleWorkspace ? 'Fictional sample records' : 'Collections are not profit.'}</Text>
+      {briefing.isLoading ? <ActivityIndicator color={colors.cyan} /> : briefing.isError ? <Text style={{color: '#FFD4D4'}}>{briefing.error.message}</Text> : <View style={{borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.2)', paddingTop: 11}}>
+        <Text style={{fontSize: 13, color: '#E3F5FF'}}>{briefing.data?.successful_transactions ?? 0} successful payments today · {sampleWorkspace ? 'sample CSV records' : briefing.data?.data_available ? 'connected records' : 'no records yet'}</Text>
+        <Text style={{fontSize: 11, color: '#AFC2D8', marginTop: 4}}>{sampleWorkspace ? 'Fictional sample records' : 'Collections are not profit.'}</Text>
       </View>}
     </View>
 
@@ -62,16 +62,16 @@ export default function Home() {
       </View>}
     </Card>
 
-    <View style={{alignItems: 'center', paddingTop: 8, paddingBottom: 4}}>
-        <Link href={{pathname: '/assistant', params: {autostart: 'true'}}} asChild><Pressable hitSlop={12} accessibilityRole="button" accessibilityLabel="Start voice conversation with your AI business partner" style={{width: 126, height: 126, alignItems: 'center', justifyContent: 'center', borderRadius: 64, backgroundColor: '#E4F6FE', borderWidth: 1, borderColor: '#C2EFFF'}}>
-        <View pointerEvents="none" style={{width: 94, height: 94, alignItems: 'center', justifyContent: 'center', borderRadius: 48, backgroundColor: colors.blue, borderWidth: 5, borderColor: '#79D6FF', elevation: 5}}>
+    <View style={{alignItems: 'center', paddingTop: 6, paddingBottom: 5}}>
+        <Link href={{pathname: '/assistant', params: {autostart: 'true'}}} asChild><Pressable hitSlop={12} accessibilityRole="button" accessibilityLabel="Start voice conversation with your AI business partner" style={{width: 126, height: 126, alignItems: 'center', justifyContent: 'center', borderRadius: 64, backgroundColor: '#DDF5FF', borderWidth: 1, borderColor: '#B8E7FA'}}>
+        <View pointerEvents="none" style={{width: 92, height: 92, alignItems: 'center', justifyContent: 'center', borderRadius: 48, backgroundColor: colors.cyan, borderWidth: 5, borderColor: '#FFFFFF', elevation: 7, shadowColor: colors.blue, shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: {width: 0, height: 6}}}>
           <Text pointerEvents="none" style={{fontSize: 38, color: '#FFFFFF'}}>🎙</Text>
         </View>
         </Pressable></Link>
-      <Text style={{fontSize: 18, fontWeight: '800', color: colors.navy, textAlign: 'center', marginTop: 13}}>Talk to your AI business partner</Text>
+      <Text style={{fontSize: 18, fontWeight: '800', color: colors.navy, textAlign: 'center', marginTop: 11}}>Talk to your AI business partner</Text>
       <Text style={{fontSize: 13, color: colors.muted, marginTop: 4, textAlign: 'center'}}>Ask in English or Hindi</Text>
       <View style={{flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 14}}>
-        {prompts.map(prompt => <Link key={prompt.question} href={{pathname: '/assistant', params: {question: prompt.question}}} asChild><Pressable style={{backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 9}}>
+        {prompts.map(prompt => <Link key={prompt.question} href={{pathname: '/assistant', params: {question: prompt.question}}} asChild><Pressable style={{backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 18, paddingHorizontal: 12, paddingVertical: 9, shadowColor: colors.navy, shadowOpacity: 0.04, shadowRadius: 5, shadowOffset: {width: 0, height: 2}, elevation: 1}}>
           <Text style={{fontSize: 12, fontWeight: '600', color: colors.navy}}>{prompt.label}</Text>
         </Pressable></Link>)}
       </View>

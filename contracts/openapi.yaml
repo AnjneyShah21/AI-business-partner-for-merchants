@@ -18,8 +18,7 @@ paths:
   /integrations/import/transactions:
     post:
       summary: Import Transactions
-      description: Accept a merchant-authorized normalized import, never label it
-        as provider-live data.
+      description: Accept a merchant-authorized normalized import, never label it as provider-live data.
       operationId: import_transactions_integrations_import_transactions_post
       requestBody:
         content:
@@ -41,6 +40,67 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
+  /receivables:
+    get:
+      summary: List Receivables
+      operationId: list_receivables_receivables_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            pattern: ^(pending|settled)$
+          - type: 'null'
+          title: Status
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      summary: Create Receivable
+      description: Create a confirmed, merchant-entered due record, separate from processor payments.
+      operationId: create_receivable_receivables_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReceivableCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /stores:
     get:
       summary: List Stores
@@ -616,6 +676,7 @@ paths:
   /analytics/timeline:
     get:
       summary: Sales Timeline
+      description: Return merchant-scoped hourly or daily collections and refunds in India time.
       operationId: sales_timeline_analytics_timeline_get
       security:
       - HTTPBearer: []
@@ -624,8 +685,11 @@ paths:
         in: query
         required: false
         schema:
+          enum:
+          - day
+          - week
+          - month
           type: string
-          enum: [day, week, month]
           default: day
           title: Period
       responses:
@@ -698,6 +762,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /auth/google:
+    post:
+      summary: Google Sign In
+      operationId: google_sign_in_auth_google_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleSignInRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /auth/local-session:
     post:
       summary: Local Session
@@ -721,15 +807,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /auth/google:
+  /me:
+    get:
+      summary: Me
+      operationId: me_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /assistant/voices:
+    get:
+      summary: Assistant Voices
+      operationId: assistant_voices_assistant_voices_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /assistant/speech:
     post:
-      summary: Google Sign In
-      operationId: google_sign_in_auth_google_post
+      summary: Assistant Speech
+      operationId: assistant_speech_assistant_speech_post
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/GoogleSignInRequest'
+              $ref: '#/components/schemas/SpeechRequest'
         required: true
       responses:
         '200':
@@ -743,16 +853,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /me:
-    get:
-      summary: Me
-      operationId: me_me_get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
       security:
       - HTTPBearer: []
   /dashboard/sales:
@@ -787,7 +887,7 @@ paths:
   /dashboard/briefing:
     get:
       summary: Dashboard Briefing
-      description: Localized, read-only merchant summary from recorded business data.
+      description: Build a daily, read-only summary from this merchant's recorded data.
       operationId: dashboard_briefing_dashboard_briefing_get
       security:
       - HTTPBearer: []
@@ -796,8 +896,10 @@ paths:
         in: query
         required: false
         schema:
+          enum:
+          - en
+          - hi
           type: string
-          enum: [en, hi]
           default: en
           title: Language
       responses:
@@ -1026,53 +1128,6 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
-  /assistant/voices:
-    get:
-      summary: Assistant Voices
-      operationId: assistant_voices_assistant_voices_get
-      responses:
-        '200':
-          description: ElevenLabs voices available to the configured account
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AssistantVoiceList'
-        '503':
-          description: ElevenLabs is not configured
-        '502':
-          description: ElevenLabs voice list is unavailable
-      security:
-      - HTTPBearer: []
-  /assistant/speech:
-    post:
-      summary: Assistant Speech
-      operationId: assistant_speech_assistant_speech_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SpeechRequest'
-        required: true
-      responses:
-        '200':
-          description: Generated speech audio
-          content:
-            audio/mpeg:
-              schema:
-                type: string
-                format: binary
-        '422':
-          description: Invalid text or unavailable voice
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-        '503':
-          description: ElevenLabs is not configured
-        '502':
-          description: ElevenLabs speech generation failed
-      security:
-      - HTTPBearer: []
 components:
   schemas:
     ActionCreate:
@@ -1150,68 +1205,15 @@ components:
           type: boolean
           title: Grounded
           default: true
+        pending_receivable_draft:
+          anyOf:
+          - $ref: '#/components/schemas/PendingReceivableDraft'
+          - type: 'null'
       type: object
       required:
       - answer
       - sources
       title: AssistantResponse
-    AssistantVoice:
-      properties:
-        voice_id:
-          type: string
-          title: Voice Id
-        name:
-          type: string
-          title: Name
-        category:
-          type: string
-          title: Category
-        accent:
-          type: string
-          title: Accent
-        gender:
-          type: string
-          title: Gender
-      type: object
-      required:
-      - voice_id
-      - name
-      - category
-      - accent
-      - gender
-      title: AssistantVoice
-    AssistantVoiceList:
-      properties:
-        voices:
-          items:
-            $ref: '#/components/schemas/AssistantVoice'
-          type: array
-          title: Voices
-        default_voice_id:
-          type: string
-          title: Default Voice Id
-      type: object
-      required:
-      - voices
-      - default_voice_id
-      title: AssistantVoiceList
-    SpeechRequest:
-      properties:
-        text:
-          type: string
-          maxLength: 2500
-          minLength: 1
-          title: Text
-        voice_id:
-          anyOf:
-          - type: string
-            maxLength: 128
-          - type: 'null'
-          title: Voice Id
-      type: object
-      required:
-      - text
-      title: SpeechRequest
     CampaignIn:
       properties:
         name:
@@ -1255,6 +1257,17 @@ components:
       required:
       - display_name
       title: CustomerIn
+    GoogleSignInRequest:
+      properties:
+        id_token:
+          type: string
+          maxLength: 8192
+          minLength: 1
+          title: Id Token
+      type: object
+      required:
+      - id_token
+      title: GoogleSignInRequest
     HTTPValidationError:
       properties:
         detail:
@@ -1315,17 +1328,6 @@ components:
       - status
       - occurred_at
       title: ImportedTransaction
-    GoogleSignInRequest:
-      properties:
-        id_token:
-          type: string
-          maxLength: 8192
-          minLength: 1
-          title: Id Token
-      type: object
-      required:
-      - id_token
-      title: GoogleSignInRequest
     MerchantCreate:
       properties:
         name:
@@ -1363,6 +1365,27 @@ components:
       - tier
       - currency
       title: MerchantOut
+    PendingReceivableDraft:
+      properties:
+        customer_name:
+          type: string
+          maxLength: 180
+          minLength: 1
+          title: Customer Name
+        amount:
+          type: string
+          title: Amount
+        note:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Note
+      type: object
+      required:
+      - customer_name
+      - amount
+      title: PendingReceivableDraft
     ProductCreate:
       properties:
         name:
@@ -1480,6 +1503,36 @@ components:
       required:
       - question
       title: QueryIn
+    ReceivableCreate:
+      properties:
+        customer_name:
+          type: string
+          maxLength: 180
+          minLength: 1
+          title: Customer Name
+        amount:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: string
+          title: Amount
+        note:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Note
+        idempotency_key:
+          type: string
+          maxLength: 80
+          minLength: 12
+          title: Idempotency Key
+      type: object
+      required:
+      - customer_name
+      - amount
+      - idempotency_key
+      title: ReceivableCreate
     SalesSummary:
       properties:
         currency:
@@ -1518,31 +1571,14 @@ components:
       - as_of
       - data_available
       title: SalesSummary
-    SalesTimelineBucket:
-      properties:
-        label:
-          type: string
-          title: Label
-        collections:
-          type: string
-          title: Collections
-        refunds:
-          type: string
-          title: Refunds
-        successful_transactions:
-          type: integer
-          title: Successful Transactions
-      type: object
-      required:
-      - label
-      - collections
-      - refunds
-      - successful_transactions
-      title: SalesTimelineBucket
     SalesTimeline:
       properties:
         period:
           type: string
+          enum:
+          - day
+          - week
+          - month
           title: Period
         timezone:
           type: string
@@ -1593,6 +1629,44 @@ components:
       - source
       - collections_are_not_profit
       title: SalesTimeline
+    SalesTimelineBucket:
+      properties:
+        label:
+          type: string
+          title: Label
+        collections:
+          type: string
+          title: Collections
+        refunds:
+          type: string
+          title: Refunds
+        successful_transactions:
+          type: integer
+          title: Successful Transactions
+      type: object
+      required:
+      - label
+      - collections
+      - refunds
+      - successful_transactions
+      title: SalesTimelineBucket
+    SpeechRequest:
+      properties:
+        text:
+          type: string
+          maxLength: 2500
+          minLength: 1
+          title: Text
+        voice_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+          - type: 'null'
+          title: Voice Id
+      type: object
+      required:
+      - text
+      title: SpeechRequest
     StaffIn:
       properties:
         display_name:
@@ -1715,5 +1789,3 @@ components:
     HTTPBearer:
       type: http
       scheme: bearer
-servers:
-- url: /api/v1

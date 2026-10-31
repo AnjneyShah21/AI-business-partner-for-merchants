@@ -15,8 +15,9 @@ from app.auth import current_actor
 from app.core.db import get_db
 from app.core.time import utc_aware
 from app.models import (ActionProposal, AuditEvent, Campaign, Conversation, CreditOffer, Customer,
-                        InventoryMovement, Message, Notification, Product, PurchaseOrder, StaffMember,
+                        InventoryMovement, Message, Notification, Product, PurchaseOrder, Receivable, StaffMember,
                         Store, Supplier, TaxRecord, Transaction)
+from app.schemas import ReceivableCreate, SalesTimeline
 
 router = APIRouter()
 
@@ -36,6 +37,10 @@ def integration_status(actor=Depends(current_actor)):
         if item.key == "llm" and settings.model_provider.casefold() == "gemini" and settings.gemini_api_key:
             status = "configured"
             prerequisite = "General AI only; free-tier prompts may be used to improve Google's products"
+        if item.key == "llm" and settings.model_provider.casefold() == "ollama":
+            from app.providers import ollama_model_ready
+            status = "configured" if ollama_model_ready() else "not_configured"
+            prerequisite = f"Run Ollama locally and pull {settings.ollama_model}; private merchant context is processed on this machine"
         if item.key == "text_to_speech" and settings.elevenlabs_api_key:
             status = "configured"
             prerequisite = "ElevenLabs synthesis; usage is subject to the account plan and quota"
@@ -106,6 +111,59 @@ def import_transactions(body: TransactionImport, actor=Depends(current_actor), d
 def require_manager(actor):
     if actor["role"] not in {"owner", "admin", "manager"}:
         raise HTTPException(403, "Manager permission required")
+
+
+def receivable_dict(row: Receivable) -> dict:
+    return {"id": row.id, "customer_name": row.customer_name, "amount": row.amount,
+            "status": row.status, "note": row.note, "source": row.source,
+            "created_at": row.created_at}
+
+
+@router.get("/receivables")
+def list_receivables(status: str | None = Query(default=None, pattern="^(pending|settled)$"),
+                     limit: int = Query(default=100, ge=1, le=200),
+                     actor=Depends(current_actor), db: Session = Depends(get_db)):
+    query = select(Receivable).where(Receivable.merchant_id == actor["merchant_id"])
+    if status:
+        query = query.where(Receivable.status == status)
+    rows = db.scalars(query.order_by(Receivable.created_at.desc()).limit(limit)).all()
+    return [receivable_dict(row) for row in rows]
+
+
+@router.post("/receivables", status_code=201)
+def create_receivable(body: ReceivableCreate, actor=Depends(current_actor), db: Session = Depends(get_db)):
+    """Create a confirmed, merchant-entered due record, separate from processor payments."""
+    require_manager(actor)
+    name = " ".join(body.customer_name.split()).strip()
+    if not name:
+        raise HTTPException(422, "Customer name is required")
+    existing = db.scalar(select(Receivable).where(
+        Receivable.merchant_id == actor["merchant_id"],
+        Receivable.idempotency_key == body.idempotency_key))
+    if existing:
+        if existing.customer_name.casefold() != name.casefold() or existing.amount != body.amount:
+            raise HTTPException(409, "This confirmation key was already used for a different due record")
+        return {**receivable_dict(existing), "created": False}
+
+    row = Receivable(merchant_id=actor["merchant_id"], customer_name=name, amount=body.amount,
+                     note=body.note, status="pending", source="assistant",
+                     idempotency_key=body.idempotency_key, created_by=actor["subject"])
+    db.add(row)
+    db.flush()
+    db.add(AuditEvent(merchant_id=actor["merchant_id"], subject=actor["subject"],
+                      action="receivable.assistant_created", resource_id=row.id))
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        existing = db.scalar(select(Receivable).where(
+            Receivable.merchant_id == actor["merchant_id"],
+            Receivable.idempotency_key == body.idempotency_key))
+        if existing and existing.customer_name.casefold() == name.casefold() and existing.amount == body.amount:
+            return {**receivable_dict(existing), "created": False}
+        raise HTTPException(409, "Could not safely save this due record; review the pending list and retry") from exc
+    db.refresh(row)
+    return {**receivable_dict(row), "created": True}
 
 
 class StoreIn(BaseModel):
@@ -435,7 +493,7 @@ def period_comparison(days: int = Query(default=7, ge=1, le=90), actor=Depends(c
             "comparison_available": previous != 0, "metric": "successful collections; not revenue or profit"}
 
 
-@router.get("/analytics/timeline")
+@router.get("/analytics/timeline", response_model=SalesTimeline)
 def sales_timeline(period: Literal["day", "week", "month"] = Query(default="day"),
                    actor=Depends(current_actor), db: Session = Depends(get_db)):
     """Return merchant-scoped hourly or daily collections and refunds in India time."""

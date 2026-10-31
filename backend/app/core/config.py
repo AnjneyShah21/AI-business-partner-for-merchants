@@ -18,9 +18,11 @@ class Settings(BaseSettings):
     session_ttl_minutes: int = 60
     google_oauth_client_id: str = ""
     allowed_origins: str = "http://localhost:8081"
-    model_provider: str = "disabled"
+    model_provider: str = "ollama"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen3:0.6b"
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = ""
     elevenlabs_model: str = "eleven_multilingual_v2"

@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | Payment transaction and settlement feed | Normalized merchant CSV import and read APIs; live provider sync unavailable | Authorized provider contract, credential vault, verified webhook/sync adapter |
 | Google login and session lifecycle | Native Google sign-in with backend ID-token verification and short-lived app sessions | Google Cloud OAuth client IDs, Android package/SHA-1 registration, deployment key rotation and account recovery policy |
-| LLM | Optional Gemini adapter for general guidance; local sales, stock and settlement questions remain deterministic | Provider data-processing review, prompt/tool evaluation, production key management and usage limits |
+| LLM | Local Ollama `qwen3:0.6b` for general business analysis; exact sales, payment, settlement and customer-due answers are read from merchant records | Ollama runtime/model must be installed on the backend host; verify language and answer quality on the target machine |
 | Speech recognition and synthesis | English (`en-IN`) and Hindi (`hi-IN`) recognition uses Android; the authenticated backend uses the ElevenLabs Python SDK for MP3 replies, with Android voice fallback | Account quota/voice access, response-text disclosure, production usage limits, retention review and device testing |
 | Lending offers and applications | Not implemented | Authorized lender adapters, disclosures, consent and compliance review |
 | GST filing | Summaries not implemented as statutory filing | Verified tax rules and authorized filing integration; accountant review |
@@ -21,9 +21,23 @@ Set the Web client ID as `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` in `mobile/.env` and
 
 The emulator debug fingerprint can be read with `keytool -list -v -alias androiddebugkey -keystore ~/.android/debug.keystore -storepass android -keypass android`. A release build has a different fingerprint and needs its own Android OAuth client registration. Without OAuth configuration, the Google button explains what's missing; the offline sample workspace remains available for demonstrations.
 
-## Gemini development setup
+## Local free LLM
 
-For local experiments with non-sensitive prompts only, create a key in Google AI Studio and set `MODEL_PROVIDER=gemini`, `GEMINI_API_KEY`, and optionally `GEMINI_MODEL` in the repository-root `.env`. Docker Compose now forwards these server-only settings to the API. Keep the key on the server; never place it in the Android app or commit it. The default model is `gemini-3.5-flash-lite`. The assistant sends only the current general question to Gemini; deterministic sales, inventory, and settlement answers use local records and do not call Gemini. Google's free-tier terms say submitted content may be used to improve its products, so do not send personal, customer, payment, or other confidential merchant information through this setup. Production use requires a data-processing review and managed secret storage.
+The backend uses Ollama with [`qwen3:0.6b`](https://ollama.com/library/qwen3:0.6b) by default. The quantized model download is about 523 MB and is Apache 2.0 licensed. Inference runs on the machine hosting the backend; there is no per-token API bill. First-time model download needs internet access, and response speed depends on that machine's CPU/RAM. This small model is suitable for a low-cost prototype, not a guarantee of production-grade financial reasoning.
+
+The Compose stack downloads the model on first start and stores it in the named `ollamadata` volume. To pull it manually instead:
+
+```sh
+docker compose exec ollama ollama pull qwen3:0.6b
+```
+
+The API uses `http://ollama:11434` inside the private Compose network. When running the API directly on the host, the default is `http://127.0.0.1:11434`; install Ollama, run `ollama pull qwen3:0.6b`, then start Ollama with `ollama serve` and start the API. The backend rejects remote Ollama hosts so it cannot send merchant snapshots to an arbitrary model endpoint. Built-in numerical questions use database calculations; open-ended questions receive a bounded merchant snapshot on the local model. Sample-workspace answers remain rule-based and fictional.
+
+For a command such as “keep ₹500 pending from Mr Suresh,” the assistant first displays a draft. It writes an internal customer-due record only after the merchant confirms. These notes are separate from payment history and settlement records. Asking who owes money reads these records back from the same merchant workspace.
+
+## Optional Gemini development setup
+
+For non-sensitive prompts only, create a key in Google AI Studio and set `MODEL_PROVIDER=gemini`, `GEMINI_API_KEY`, and optionally `GEMINI_MODEL` in the repository-root `.env`. The assistant sends only the current general question to Gemini; customer and payment rows are not sent. Google's free-tier terms say submitted content may be used to improve its products, so do not send personal, customer, payment, or other confidential merchant information through this setup. Production use requires a data-processing review and managed secret storage.
 
 The mobile sample workspace is intentionally offline and does not call Gemini. It loads fictional transactions from `mobile/assets/demo/merchant_transactions_sample.csv`; relative dates are shifted to the current India date when loaded. In the welcome screen, choose **Open presentation sample**. The CSV contains fictional sender labels and references; every screen labels those records as sample data, and no merchant or Paytm connection is made.
 

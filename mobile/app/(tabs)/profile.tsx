@@ -1,5 +1,5 @@
 import {Card, Note, Screen} from '@/components/Screen';
-import {Pressable, Text} from 'react-native';
+import {Pressable, Text, View} from 'react-native';
 import {Link, router} from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import {colors} from '@/theme/tokens';
@@ -22,7 +22,12 @@ export default function Profile() {
     router.replace('/');
   }
 
-  return <Screen title="Profile" subtitle="Merchant workspace and security">
+  return <Screen title="Business profile" subtitle="Workspace, services and security">
+    <View style={{backgroundColor: colors.navy, borderRadius: 24, padding: 19, gap: 7}}>
+      <Text style={{color: '#B9E9FF', fontSize: 12, fontWeight: '800', letterSpacing: 0.7}}>PAYTM AI BUSINESS PARTNER</Text>
+      <Text style={{color: '#FFFFFF', fontSize: 20, fontWeight: '800'}}>{sampleWorkspace ? 'Fictional sample workspace' : 'Merchant workspace'}</Text>
+      <Text style={{color: '#D5E8FA', fontSize: 13, lineHeight: 19}}>{sampleWorkspace ? 'Local sample records · no Paytm account connected' : 'Signed in with Google · merchant data served by the authenticated API'}</Text>
+    </View>
     <Card title="BUSINESS TOOLS">
       <Note>Open transactions, inventory, customers, campaigns, approvals, and other merchant tools.</Note>
       <Link href="/tools" asChild><Pressable accessibilityRole="button" style={{backgroundColor: '#EAF4FF', padding: 12, borderRadius: 10, alignItems: 'center'}}><Text style={{fontWeight: '700', color: colors.blue}}>Open business tools</Text></Pressable></Link>
@@ -38,11 +43,11 @@ export default function Profile() {
       </Pressable></Link>
     </Card>
     <Card title="Privacy and security"><Note>{sampleWorkspace
-      ? 'This workspace contains fictional records and has no Paytm connection. Voice audio uses your installed Android speech service; its network use depends on that service and its settings.'
-      : 'Merchant financial data is loaded only from authenticated backend APIs. Provider credentials are never stored in this app. When ElevenLabs is enabled, spoken reply text is sent there to generate audio.'}</Note></Card>
+      ? 'This workspace contains fictional records and has no Paytm connection. Voice recognition uses the Android speech service configured on this device.'
+      : 'Merchant records are loaded through authenticated backend APIs. The local Ollama model is designed to analyze a bounded merchant data snapshot on the backend host. ElevenLabs receives reply text only when you request spoken playback and it is configured.'}</Note></Card>
     <Card title="Language & accessibility"><Note>English and Hindi voice questions use Android speech recognition. Spoken replies use your selected ElevenLabs voice when configured, with Android text-to-speech as fallback.</Note></Card>
     <ProviderStatus/>
-    <Pressable onPress={signOut} style={{padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center'}}><Text style={{fontWeight: '600', color: colors.ink}}>Sign out</Text></Pressable>
+    <Pressable onPress={signOut} accessibilityRole="button" style={{padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#F0CACA', backgroundColor: '#FFF8F8', alignItems: 'center'}}><Text style={{fontWeight: '800', color: colors.red}}>Log out</Text></Pressable>
   </Screen>;
 }
 

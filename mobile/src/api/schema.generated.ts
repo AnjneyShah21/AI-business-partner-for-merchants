@@ -41,6 +41,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/receivables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Receivables */
+        get: operations["list_receivables_receivables_get"];
+        put?: never;
+        /**
+         * Create Receivable
+         * @description Create a confirmed, merchant-entered due record, separate from processor payments.
+         */
+        post: operations["create_receivable_receivables_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/stores": {
         parameters: {
             query?: never;
@@ -363,7 +384,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Sales Timeline */
+        /**
+         * Sales Timeline
+         * @description Return merchant-scoped hourly or daily collections and refunds in India time.
+         */
         get: operations["sales_timeline_analytics_timeline_get"];
         put?: never;
         post?: never;
@@ -441,23 +465,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/local-session": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Local Session */
-        post: operations["local_session_auth_local_session_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/auth/google": {
         parameters: {
             query?: never;
@@ -475,6 +482,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/local-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Local Session */
+        post: operations["local_session_auth_local_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -486,6 +510,40 @@ export interface paths {
         get: operations["me_me_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/voices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Assistant Voices */
+        get: operations["assistant_voices_assistant_voices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/speech": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assistant Speech */
+        post: operations["assistant_speech_assistant_speech_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -518,7 +576,7 @@ export interface paths {
         };
         /**
          * Dashboard Briefing
-         * @description Localized, read-only merchant summary from recorded business data.
+         * @description Build a daily, read-only summary from this merchant's recorded data.
          */
         get: operations["dashboard_briefing_dashboard_briefing_get"];
         put?: never;
@@ -667,40 +725,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/assistant/voices": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Assistant Voices */
-        get: operations["assistant_voices_assistant_voices_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/assistant/speech": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Assistant Speech */
-        post: operations["assistant_speech_assistant_speech_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -748,33 +772,7 @@ export interface components {
              * @default true
              */
             grounded: boolean;
-        };
-        /** AssistantVoice */
-        AssistantVoice: {
-            /** Voice Id */
-            voice_id: string;
-            /** Name */
-            name: string;
-            /** Category */
-            category: string;
-            /** Accent */
-            accent: string;
-            /** Gender */
-            gender: string;
-        };
-        /** AssistantVoiceList */
-        AssistantVoiceList: {
-            /** Voices */
-            voices: components["schemas"]["AssistantVoice"][];
-            /** Default Voice Id */
-            default_voice_id: string;
-        };
-        /** SpeechRequest */
-        SpeechRequest: {
-            /** Text */
-            text: string;
-            /** Voice Id */
-            voice_id?: string | null;
+            pending_receivable_draft?: components["schemas"]["PendingReceivableDraft"] | null;
         };
         /** CampaignIn */
         CampaignIn: {
@@ -794,6 +792,11 @@ export interface components {
             display_name: string;
             /** Contact Hash */
             contact_hash?: string | null;
+        };
+        /** GoogleSignInRequest */
+        GoogleSignInRequest: {
+            /** Id Token */
+            id_token: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -825,11 +828,6 @@ export interface components {
             /** Sender Contact */
             sender_contact?: string | null;
         };
-        /** GoogleSignInRequest */
-        GoogleSignInRequest: {
-            /** Id Token */
-            id_token: string;
-        };
         /** MerchantCreate */
         MerchantCreate: {
             /** Name */
@@ -850,6 +848,15 @@ export interface components {
             tier: string;
             /** Currency */
             currency: string;
+        };
+        /** PendingReceivableDraft */
+        PendingReceivableDraft: {
+            /** Customer Name */
+            customer_name: string;
+            /** Amount */
+            amount: string;
+            /** Note */
+            note?: string | null;
         };
         /** ProductCreate */
         ProductCreate: {
@@ -918,6 +925,17 @@ export interface components {
             /** Question */
             question: string;
         };
+        /** ReceivableCreate */
+        ReceivableCreate: {
+            /** Customer Name */
+            customer_name: string;
+            /** Amount */
+            amount: number | string;
+            /** Note */
+            note?: string | null;
+            /** Idempotency Key */
+            idempotency_key: string;
+        };
         /** SalesSummary */
         SalesSummary: {
             /** Currency */
@@ -940,21 +958,13 @@ export interface components {
             /** Data Available */
             data_available: boolean;
         };
-        /** SalesTimelineBucket */
-        SalesTimelineBucket: {
-            /** Label */
-            label: string;
-            /** Collections */
-            collections: string;
-            /** Refunds */
-            refunds: string;
-            /** Successful Transactions */
-            successful_transactions: number;
-        };
         /** SalesTimeline */
         SalesTimeline: {
-            /** Period */
-            period: string;
+            /**
+             * Period
+             * @enum {string}
+             */
+            period: "day" | "week" | "month";
             /** Timezone */
             timezone: string;
             /**
@@ -984,6 +994,24 @@ export interface components {
             source: string;
             /** Collections Are Not Profit */
             collections_are_not_profit: boolean;
+        };
+        /** SalesTimelineBucket */
+        SalesTimelineBucket: {
+            /** Label */
+            label: string;
+            /** Collections */
+            collections: string;
+            /** Refunds */
+            refunds: string;
+            /** Successful Transactions */
+            successful_transactions: number;
+        };
+        /** SpeechRequest */
+        SpeechRequest: {
+            /** Text */
+            text: string;
+            /** Voice Id */
+            voice_id?: string | null;
         };
         /** StaffIn */
         StaffIn: {
@@ -1079,6 +1107,71 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_receivables_receivables_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_receivable_receivables_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReceivableCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1983,16 +2076,18 @@ export interface operations {
             };
         };
     };
-    local_session_auth_local_session_post: {
+    google_sign_in_auth_google_post: {
         parameters: {
-            query: {
-                merchant_id: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleSignInRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -2014,18 +2109,16 @@ export interface operations {
             };
         };
     };
-    google_sign_in_auth_google_post: {
+    local_session_auth_local_session_post: {
         parameters: {
-            query?: never;
+            query: {
+                merchant_id: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GoogleSignInRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -2063,6 +2156,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    assistant_voices_assistant_voices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    assistant_speech_assistant_speech_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpeechRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2400,87 +2546,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
-            };
-        };
-    };
-    assistant_voices_assistant_voices_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description ElevenLabs voices available to the configured account */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AssistantVoiceList"];
-                };
-            };
-            /** @description ElevenLabs voice list is unavailable */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description ElevenLabs is not configured */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    assistant_speech_assistant_speech_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SpeechRequest"];
-            };
-        };
-        responses: {
-            /** @description Generated speech audio */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "audio/mpeg": string;
-                };
-            };
-            /** @description Invalid text or unavailable voice */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description ElevenLabs speech generation failed */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description ElevenLabs is not configured */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };

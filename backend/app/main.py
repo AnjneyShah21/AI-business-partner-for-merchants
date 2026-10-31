@@ -3,7 +3,7 @@ import re
 from functools import lru_cache
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -20,11 +20,11 @@ from app.analytics import summarize_transactions
 from app.core.config import get_settings
 from app.core.db import Base, engine, get_db
 from app.core.time import utc_aware
-from app.models import ActionProposal, AuditEvent, Campaign, Conversation, Customer, Merchant, Membership, Message, Product, PurchaseOrder, Settlement, Transaction
+from app.models import ActionProposal, AuditEvent, Campaign, Conversation, Customer, Merchant, Membership, Message, Product, PurchaseOrder, Receivable, Settlement, Transaction
 from app.routes import (cashflow_forecast, peak_hours, period_comparison,
                         router as business_router, tax_summary)
 from app.schemas import (ActionCreate, ActionOut, AssistantRequest, AssistantResponse, MerchantCreate,
-                         MerchantOut, ProductCreate, ProductOut, SalesSummary)
+                         MerchantOut, PendingReceivableDraft, ProductCreate, ProductOut, SalesSummary)
 
 cfg = get_settings()
 
@@ -388,9 +388,112 @@ def decide_proposal(proposal_id: str, decision: str = Query(pattern="^(approve|r
             "message": "No external action was executed; a verified provider adapter is required."}
 
 
+def parse_receivable_request(question: str, hindi: bool) -> dict | None:
+    q = question.casefold()
+    write_intent = bool(re.search(
+        r"\b(?:keep|mark|record|add|note|set|make|leave|put)\b|रख(?:ो|ें)?|लिख(?:ो|ें)?|दर्ज(?:़)?\s+कर|जोड़(?:ो|ें)?",
+        q, re.IGNORECASE))
+    due_intent = bool(re.search(
+        r"\b(?:pending|due|owed|owes|owing|unpaid|outstanding)\b|बाकी|उधार|पेंडिंग|देना\s+है",
+        q, re.IGNORECASE))
+    if not (write_intent and due_intent):
+        return None
+
+    # Hindi word order puts the customer's name before "से" and often puts the
+    # amount after it. Let the local LLM extract that structure rather than
+    # accidentally treating the amount and following words as a person's name.
+    if hindi or re.search(r"[\u0900-\u097F]", question):
+        if get_settings().model_provider.casefold() == "ollama":
+            from app.providers import parse_receivable_command
+            try:
+                draft = parse_receivable_command(question, "hi" if re.search(r"[\u0900-\u097F]", question) else "en")
+            except RuntimeError:
+                draft = None
+            return {"draft": draft}
+        return {"draft": None}
+
+    normalized = question.translate(str.maketrans("०१२३४५६७८९", "0123456789"))
+    amount_match = re.search(r"(?:₹|rs\.?\s*)?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:rupees?|रुपये|रुपया|inr)?", normalized, re.IGNORECASE)
+    name_match = re.search(
+        r"\b(?:from|by|of|से)\s+(?:(?:mr|mrs|ms|shri|smt)\.?\s+|श्री\s+|श्रीमती\s+)?([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F .'-]{1,100})",
+        normalized, re.IGNORECASE)
+
+    draft = None
+    if amount_match and name_match:
+        amount_text = amount_match.group(1).replace(",", "")
+        raw_name = re.split(r"\b(?:as|because|which|that|who|when|until|on)\b|[,.!?;]", name_match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
+        customer_name = " ".join(raw_name.split()).strip(" .,-")
+        customer_name = re.sub(r"^(?:mr|mrs|ms|shri|smt)\.?\s+", "", customer_name, flags=re.IGNORECASE)
+        try:
+            amount = Decimal(amount_text).quantize(Decimal("0.01"))
+            if customer_name and amount > 0 and amount <= Decimal("999999999999.99"):
+                draft = {"customer_name": customer_name[:180], "amount": amount, "note": None}
+        except InvalidOperation:
+            draft = None
+
+    if draft is None and get_settings().model_provider.casefold() == "ollama":
+        from app.providers import parse_receivable_command
+        try:
+            draft = parse_receivable_command(question, "hi" if hindi else "en")
+        except RuntimeError:
+            draft = None
+    return {"draft": draft}
+
+
+def assistant_business_context(actor, db: Session) -> dict:
+    """Build a bounded snapshot for local inference; merchant rows never go to a cloud model."""
+    merchant_id = actor["merchant_id"]
+    as_of = datetime.now(timezone.utc)
+    transactions = db.scalars(select(Transaction).where(
+        Transaction.merchant_id == merchant_id,
+        Transaction.occurred_at >= as_of - timedelta(days=30),
+    ).order_by(Transaction.occurred_at.desc()).limit(100)).all()
+
+    def totals(rows):
+        successful = [row for row in rows if row.status == "succeeded"]
+        refunds = [row for row in rows if row.status == "refunded"]
+        return {"successful_collections_inr": str(sum((row.amount for row in successful), Decimal("0.00"))),
+                "successful_payment_count": len(successful),
+                "refunds_inr": str(sum((abs(row.amount) for row in refunds), Decimal("0.00")))}
+
+    last_24h = [row for row in transactions if utc_aware(row.occurred_at) >= as_of - timedelta(hours=24)]
+    last_7d = [row for row in transactions if utc_aware(row.occurred_at) >= as_of - timedelta(days=7)]
+    settlements_rows = db.scalars(select(Settlement).where(
+        Settlement.merchant_id == merchant_id, Settlement.status == "pending"
+    ).order_by(Settlement.expected_at.desc()).limit(50)).all()
+    receivables = db.scalars(select(Receivable).where(
+        Receivable.merchant_id == merchant_id, Receivable.status == "pending"
+    ).order_by(Receivable.created_at.desc()).limit(100)).all()
+    products = db.scalars(select(Product).where(
+        Product.merchant_id == merchant_id, Product.active.is_(True)
+    ).limit(100)).all()
+    return {
+        "as_of_utc": as_of.isoformat(),
+        "collections_last_24_hours": totals(last_24h),
+        "collections_last_7_days": totals(last_7d),
+        "pending_settlements": [
+            {"amount_inr": str(row.amount), "expected_at": row.expected_at.isoformat() if row.expected_at else None}
+            for row in settlements_rows
+        ],
+        "pending_customer_receivables": [
+            {"customer_name": row.customer_name, "amount_inr": str(row.amount), "recorded_at": row.created_at.isoformat()}
+            for row in receivables
+        ],
+        "low_stock_products": [
+            {"name": row.name, "quantity": row.quantity, "reorder_level": row.reorder_level, "unit": row.unit}
+            for row in products if row.quantity <= row.reorder_level
+        ],
+        "recent_payments": [
+            {"amount_inr": str(row.amount), "status": row.status, "method": row.payment_method,
+             "sender": row.sender_name, "occurred_at": utc_aware(row.occurred_at).isoformat()}
+            for row in transactions[:20]
+        ],
+    }
+
+
 @api.post("/assistant/query", response_model=AssistantResponse)
 def assistant_query(body: AssistantRequest, actor=Depends(current_actor), db: Session = Depends(get_db)):
-    # A no-model deterministic assistant is safer than inventing values. AI provider remains opt-in.
+    # Answer exact merchant questions from records first; use the local LLM for open-ended analysis.
     q = body.question.casefold()
     hindi = body.response_language == "hi" or (
         body.response_language is None and (
@@ -406,12 +509,51 @@ def assistant_query(body: AssistantRequest, actor=Depends(current_actor), db: Se
             raise HTTPException(404, "Conversation not found")
         db.add(Message(conversation_id=conversation.id, role="user", content=body.question))
 
-    def respond(answer: str, sources: list[str]):
-        result = AssistantResponse(answer=answer, sources=sources)
+    def respond(answer: str, sources: list[str], pending_receivable_draft=None):
+        result = AssistantResponse(answer=answer, sources=sources,
+                                   pending_receivable_draft=pending_receivable_draft)
         if conversation:
             db.add(Message(conversation_id=conversation.id, role="assistant", content=answer, sources=sources))
             db.commit()
         return result
+
+    receivable_request = parse_receivable_request(body.question, hindi)
+    if receivable_request is not None:
+        draft = receivable_request.get("draft")
+        if not draft:
+            answer = ("कृपया ग्राहक का नाम और सही राशि बताएं; मैं सेव करने से पहले रिकॉर्ड दिखाऊँगा।"
+                      if hindi else "Please include the customer's name and exact amount. I’ll show the record for confirmation before saving.")
+            return respond(answer, ["customer receivables"], None)
+        amount = draft["amount"]
+        customer_name = draft["customer_name"]
+        answer = (f"मैं {customer_name} के नाम ₹{amount:,.2f} का आंतरिक बकाया रिकॉर्ड बनाने का प्रस्ताव दे रहा हूँ। "
+                  "यह Paytm भुगतान नहीं है। सेव करने से पहले पुष्टि करें।" if hindi else
+                  f"I can record an internal ₹{amount:,.2f} due from {customer_name}. This is not a Paytm payment. Confirm before saving.")
+        return respond(answer, ["customer receivables"], PendingReceivableDraft(**draft))
+
+    customer_due_question = bool(re.search(
+        r"who\s+(?:still\s+)?owes|customer\s+due|receivable|pending\s+from|due\s+from|outstanding\s+from|list\s+(?:the\s+)?dues|\budhaar\b|\bbaaki\s+from\b|उधार|ग्राहक.*(?:बाकी|बकाया)|किससे.*(?:बाकी|बकाया)|[\u0900-\u097f]+\s+से.*(?:बाकी|बकाया)",
+        q, re.IGNORECASE))
+    if customer_due_question:
+        rows = db.scalars(select(Receivable).where(
+            Receivable.merchant_id == actor["merchant_id"], Receivable.status == "pending"
+        ).order_by(Receivable.created_at.desc()).limit(100)).all()
+        name_match = re.search(r"\b(?:from|of|by)\s+(?:(?:mr|mrs|ms|shri|smt)\.?\s+)?([a-z][a-z .'-]{1,80})", q)
+        hindi_name_match = re.search(r"([\u0900-\u097f]{2,60})\s+(?:से|का|की|के)\b", q)
+        wanted = name_match.group(1).strip(" .,-") if name_match else (
+            hindi_name_match.group(1).strip(" .,-") if hindi_name_match else "")
+        if wanted:
+            rows = [row for row in rows if wanted in row.customer_name.casefold()]
+        total = sum((row.amount for row in rows), Decimal("0.00"))
+        if not rows:
+            answer = ("इस व्यापारी खाते में कोई मेल खाता लंबित ग्राहक-बकाया रिकॉर्ड नहीं है।"
+                      if hindi else "There are no matching pending customer-due records in this merchant account.")
+        else:
+            details = "; ".join(f"{row.customer_name}: ₹{row.amount:,.2f}" for row in rows)
+            answer = (f"दर्ज लंबित ग्राहक-बकाया कुल ₹{total:,.2f} है ({len(rows)} रिकॉर्ड): {details}। "
+                      "ये आंतरिक नोट हैं, पेमेंटर से सत्यापित भुगतान नहीं।" if hindi else
+                      f"Recorded pending customer dues total ₹{total:,.2f} across {len(rows)} record(s): {details}. These are internal notes, not verified payments.")
+        return respond(answer, ["/receivables?status=pending"])
 
     if any(term in q for term in ("peak", "busiest hour", "busy time", "rush hour")) or re.search(
         r"पीक|व्यस्त समय|सबसे ज़्यादा.*समय|किस समय.*ज़्यादा", q
@@ -491,6 +633,14 @@ def assistant_query(body: AssistantRequest, actor=Depends(current_actor), db: Se
                   f"This merchant account has {len(customers)} customer records; {opted_in} have recorded marketing consent. Purchase history is not connected, so repeat buyers cannot be identified.")
         return respond(answer, ["/customers"])
     settings = get_settings()
+    if settings.model_provider.casefold() == "ollama":
+        from app.providers import ask_ollama
+        context = assistant_business_context(actor, db)
+        try:
+            answer = ask_ollama(body.question, context, "hi" if hindi else "en")
+        except RuntimeError as exc:
+            raise HTTPException(503, "The local AI model is unavailable. Start Ollama and load the configured model.") from exc
+        return respond(answer, ["local Ollama model", "merchant database snapshot"])
     if settings.model_provider.casefold() == "gemini" and settings.gemini_api_key:
         from app.providers import ask_gemini
         try:
