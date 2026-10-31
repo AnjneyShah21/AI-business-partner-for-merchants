@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     session_signing_key: str = ""
     session_ttl_minutes: int = 60
+    google_oauth_client_id: str = ""
     allowed_origins: str = "http://localhost:8081"
     model_provider: str = "disabled"
     gemini_api_key: str = ""

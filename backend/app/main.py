@@ -1,5 +1,6 @@
 import json
 import re
+from functools import lru_cache
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -12,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
+import jwt
 
 from app.auth import current_actor, issue_session
 from app.analytics import summarize_transactions
@@ -25,6 +27,11 @@ from app.schemas import (ActionCreate, ActionOut, AssistantRequest, AssistantRes
                          MerchantOut, ProductCreate, ProductOut, SalesSummary)
 
 cfg = get_settings()
+
+
+@lru_cache(maxsize=1)
+def google_jwks_client():
+    return jwt.PyJWKClient("https://www.googleapis.com/oauth2/v3/certs", cache_keys=True)
 
 
 @asynccontextmanager
@@ -64,6 +71,52 @@ def create_merchant(body: MerchantCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(merchant)
     return merchant
+
+
+class GoogleSignInRequest(BaseModel):
+    id_token: str = Field(min_length=1, max_length=8192)
+
+
+@api.post("/auth/google")
+def google_sign_in(body: GoogleSignInRequest, db: Session = Depends(get_db)):
+    if not cfg.google_oauth_client_id:
+        raise HTTPException(503, "Google sign-in is not configured on the backend")
+    try:
+        signing_key = google_jwks_client().get_signing_key_from_jwt(body.id_token).key
+    except Exception as exc:
+        raise HTTPException(503, "Google identity could not be verified right now") from exc
+    try:
+        claims = jwt.decode(body.id_token, signing_key, algorithms=["RS256"],
+                            audience=cfg.google_oauth_client_id,
+                            issuer=["accounts.google.com", "https://accounts.google.com"])
+    except jwt.PyJWTError as exc:
+        raise HTTPException(401, "Google identity token is invalid or expired") from exc
+    subject = claims.get("sub")
+    email = claims.get("email")
+    if not subject or not email or claims.get("email_verified") is not True:
+        raise HTTPException(401, "Use a Google account with a verified email address")
+    identity = f"google:{subject}"
+    membership = db.scalar(select(Membership).where(Membership.subject == identity))
+    if membership:
+        merchant = db.get(Merchant, membership.merchant_id)
+        if merchant is None:
+            raise HTTPException(403, "Merchant account is unavailable")
+    else:
+        display_name = str(claims.get("name") or email.split("@", 1)[0])[:180]
+        merchant = Merchant(name=display_name)
+        db.add(merchant)
+        db.flush()
+        membership = Membership(merchant_id=merchant.id, subject=identity, role="owner")
+        db.add(membership)
+        db.commit()
+        db.refresh(merchant)
+    try:
+        token = issue_session(identity, merchant.id, membership.role)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return {"access_token": token, "token_type": "bearer",
+            "expires_in": cfg.session_ttl_minutes * 60, "merchant_id": merchant.id,
+            "merchant_name": merchant.name}
 
 
 @api.post("/auth/local-session")
@@ -236,7 +289,21 @@ def transactions(limit: int = Query(default=50, ge=1, le=200), actor=Depends(cur
     rows = db.scalars(select(Transaction).where(Transaction.merchant_id == actor["merchant_id"])
                       .order_by(Transaction.occurred_at.desc()).limit(limit)).all()
     return [{"id": r.id, "external_id": r.external_id, "amount": str(r.amount), "status": r.status,
-             "payment_method": r.payment_method, "occurred_at": r.occurred_at, "source": r.source} for r in rows]
+             "payment_method": r.payment_method, "occurred_at": r.occurred_at, "source": r.source,
+             "sender_name": r.sender_name, "sender_reference": r.sender_reference,
+             "sender_contact": r.sender_contact} for r in rows]
+
+
+@api.get("/transactions/{transaction_id}")
+def transaction_detail(transaction_id: str, actor=Depends(current_actor), db: Session = Depends(get_db)):
+    row = db.scalar(select(Transaction).where(Transaction.id == transaction_id,
+                                                Transaction.merchant_id == actor["merchant_id"]))
+    if row is None:
+        raise HTTPException(404, "Transaction not found")
+    return {"id": row.id, "external_id": row.external_id, "amount": str(row.amount), "status": row.status,
+            "payment_method": row.payment_method, "occurred_at": row.occurred_at, "source": row.source,
+            "sender_name": row.sender_name, "sender_reference": row.sender_reference,
+            "sender_contact": row.sender_contact}
 
 
 @api.get("/cashflow/settlements")

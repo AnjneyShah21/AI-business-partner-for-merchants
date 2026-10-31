@@ -4,20 +4,21 @@ import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Card, Note, Screen } from '@/components/Screen';
 import { api, Sales } from '@/services/api';
 import { colors } from '@/theme/tokens';
-import { isDemoBuild } from '@/services/demo';
+import { useSampleWorkspace } from '@/hooks/useSampleWorkspace';
 import { money, TransactionRow } from './home';
 
-type Transaction = {id: string; amount: string; status: string; payment_method: string; occurred_at: string};
+type Transaction = {id: string; external_id?: string | null; amount: string; status: string; payment_method: string; occurred_at: string; source?: string; sender_name?: string | null; sender_reference?: string | null; sender_contact?: string | null};
 type Settlement = {id: string; amount: string; status: string; expected_at: string; settled_at: string | null};
 const periods = [{days: 1, label: 'Today'}, {days: 7, label: '7 days'}, {days: 30, label: '30 days'}];
 
 export default function Wallet() {
+  const sampleWorkspace = useSampleWorkspace();
   const [days, setDays] = useState(7);
   const sales = useQuery({queryKey: ['sales', days], queryFn: () => api<Sales>(`/dashboard/sales?days=${days}`)});
   const transactions = useQuery({queryKey: ['transactions', 100], queryFn: () => api<Transaction[]>('/transactions?limit=100')});
   const settlements = useQuery({queryKey: ['settlements'], queryFn: () => api<Settlement[]>('/cashflow/settlements')});
   const summary = sales.data;
-  return <Screen title="Wallet & Cash Flow" subtitle={isDemoBuild ? 'Fictional sample records' : 'Collections and settlement status'}>
+  return <Screen title="Wallet & Cash Flow" subtitle={sampleWorkspace ? 'Collections and settlement status · sample records' : 'Collections and settlement status'}>
     <View style={{flexDirection: 'row', gap: 8, backgroundColor: '#E8EDF5', padding: 5, borderRadius: 14}}>
       {periods.map(period => <Pressable key={period.days} onPress={() => setDays(period.days)} style={{flex: 1, alignItems: 'center', borderRadius: 10, paddingVertical: 10, backgroundColor: days === period.days ? '#FFFFFF' : 'transparent'}}><Text style={{fontWeight: '700', color: days === period.days ? colors.blue : colors.muted}}>{period.label}</Text></Pressable>)}
     </View>

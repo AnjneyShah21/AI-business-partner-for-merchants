@@ -721,6 +721,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /auth/google:
+    post:
+      summary: Google Sign In
+      operationId: google_sign_in_auth_google_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleSignInRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /me:
     get:
       summary: Me
@@ -806,6 +828,31 @@ paths:
           minimum: 1
           default: 50
           title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /transactions/{transaction_id}:
+    get:
+      summary: Transaction Detail
+      operationId: transaction_detail_transactions__transaction_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: transaction_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Transaction Id
       responses:
         '200':
           description: Successful Response
@@ -1243,6 +1290,24 @@ components:
           type: string
           format: date-time
           title: Occurred At
+        sender_name:
+          anyOf:
+          - type: string
+            maxLength: 180
+          - type: 'null'
+          title: Sender Name
+        sender_reference:
+          anyOf:
+          - type: string
+            maxLength: 180
+          - type: 'null'
+          title: Sender Reference
+        sender_contact:
+          anyOf:
+          - type: string
+            maxLength: 180
+          - type: 'null'
+          title: Sender Contact
       type: object
       required:
       - external_id
@@ -1250,6 +1315,17 @@ components:
       - status
       - occurred_at
       title: ImportedTransaction
+    GoogleSignInRequest:
+      properties:
+        id_token:
+          type: string
+          maxLength: 8192
+          minLength: 1
+          title: Id Token
+      type: object
+      required:
+      - id_token
+      title: GoogleSignInRequest
     MerchantCreate:
       properties:
         name:

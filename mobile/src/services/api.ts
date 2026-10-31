@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import type { components } from '@/api/schema.generated';
-import { demoApi, isDemoBuild } from '@/services/demo';
+import { demoApi } from '@/services/demo';
 
 const base = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1';
 export type Sales = components['schemas']['SalesSummary'];
@@ -10,16 +10,20 @@ export type ElevenLabsVoiceList = {voices: ElevenLabsVoice[]; default_voice_id: 
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = await SecureStore.getItemAsync('session_token');
-  if (isDemoBuild && token === 'offline-demo-workspace') return demoApi<T>(path, init);
+  if (token === 'offline-demo-workspace') return demoApi<T>(path, init);
   const response = await fetch(`${base}${path}`, { ...init, headers: { 'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init.headers } });
-  if (!response.ok) throw new Error(response.status === 401 ? 'Sign in is required to view merchant data.' : `Service returned ${response.status}.`);
+  if (!response.ok) {
+    let detail: string | undefined;
+    try { detail = (await response.json() as {detail?: string}).detail; } catch { /* Use the HTTP status when no JSON detail is available. */ }
+    throw new Error(detail || (response.status === 401 ? 'Sign in is required to view merchant data.' : `Service returned ${response.status}.`));
+  }
   return response.json() as Promise<T>;
 }
 
 export async function requestElevenLabsSpeech(text: string, voiceId?: string): Promise<Uint8Array> {
   const token = await SecureStore.getItemAsync('session_token');
-  if (!token || (isDemoBuild && token === 'offline-demo-workspace')) {
+  if (!token || token === 'offline-demo-workspace') {
     throw new Error('ElevenLabs playback needs a signed-in app connected to the backend.');
   }
   const response = await fetch(`${base}/assistant/speech`, {

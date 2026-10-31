@@ -30,6 +30,9 @@ def integration_status(actor=Depends(current_actor)):
     for item in CAPABILITIES:
         status = item.status
         prerequisite = item.prerequisite
+        if item.key == "google_sign_in" and settings.google_oauth_client_id:
+            status = "configured"
+            prerequisite = "Verified Google identity tokens; Google sign-in creates a merchant workspace"
         if item.key == "llm" and settings.model_provider.casefold() == "gemini" and settings.gemini_api_key:
             status = "configured"
             prerequisite = "General AI only; free-tier prompts may be used to improve Google's products"
@@ -47,6 +50,9 @@ class ImportedTransaction(BaseModel):
     status: str = Field(pattern="^(succeeded|failed|refunded)$")
     payment_method: str = Field(default="unknown", max_length=32)
     occurred_at: datetime
+    sender_name: str | None = Field(default=None, max_length=180)
+    sender_reference: str | None = Field(default=None, max_length=180)
+    sender_contact: str | None = Field(default=None, max_length=180)
 
 
 class TransactionImport(BaseModel):
@@ -74,13 +80,17 @@ def import_transactions(body: TransactionImport, actor=Depends(current_actor), d
         if exists:
             if (exists.amount != item.amount or exists.status != item.status or
                     exists.payment_method != item.payment_method or
+                    exists.sender_name != item.sender_name or exists.sender_reference != item.sender_reference or
+                    exists.sender_contact != item.sender_contact or
                     utc_aware(exists.occurred_at) != item.occurred_at.astimezone(timezone.utc)):
                 raise HTTPException(409, f"Imported external_id {item.external_id} conflicts with a previous value")
             duplicates += 1
             continue
         db.add(Transaction(id=str(uuid4()), merchant_id=actor["merchant_id"], amount=item.amount,
             status=item.status, payment_method=item.payment_method, source="merchant_import",
-            external_id=item.external_id, occurred_at=item.occurred_at.astimezone(timezone.utc)))
+            external_id=item.external_id, occurred_at=item.occurred_at.astimezone(timezone.utc),
+            sender_name=item.sender_name, sender_reference=item.sender_reference,
+            sender_contact=item.sender_contact))
         created += 1
     db.add(AuditEvent(merchant_id=actor["merchant_id"], subject=actor["subject"],
                       action="transactions.merchant_import", resource_id=f"batch:{created}"))

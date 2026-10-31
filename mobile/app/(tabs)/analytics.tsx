@@ -6,7 +6,7 @@ import { Card, Note, Screen } from '@/components/Screen';
 import { api } from '@/services/api';
 import type { components } from '@/api/schema.generated';
 import { colors } from '@/theme/tokens';
-import { isDemoBuild } from '@/services/demo';
+import { useSampleWorkspace } from '@/hooks/useSampleWorkspace';
 import { money } from './home';
 
 type Period = 'day' | 'week' | 'month';
@@ -23,6 +23,7 @@ const periodOptions: Array<{key: Period; label: string; days: number}> = [
 ];
 
 export default function Analytics() {
+  const sampleWorkspace = useSampleWorkspace();
   const [period, setPeriod] = useState<Period>('day');
   const selected = periodOptions.find(item => item.key === period)!;
   const timeline = useQuery({queryKey: ['sales-timeline', period], queryFn: () => api<Timeline>(`/analytics/timeline?period=${period}`), refetchInterval: 60_000});
@@ -35,15 +36,15 @@ export default function Analytics() {
   const change = comparison.data?.comparison_available && comparison.data.change_percent !== null
     ? Number(comparison.data.change_percent) : null;
 
-  return <Screen title="Business Analytics & Graphs" subtitle={isDemoBuild ? 'Insights from fictional sample records' : 'Insights from connected transaction records'}>
+  return <Screen title="Business Analytics & Graphs" subtitle={sampleWorkspace ? 'Insights from fictional sample records' : 'Insights from connected transaction records'}>
     <View style={{backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: colors.border, borderRadius: 17, padding: 14, gap: 13}}>
       <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
         <View style={{flex: 1}}>
           <Text style={{fontSize: 12, fontWeight: '700', color: colors.navy}}>MERCHANT WORKSPACE</Text>
           <Text style={{fontSize: 11, color: colors.muted, marginTop: 3}}>India time · {timeline.data?.as_of ? new Date(timeline.data.as_of).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : 'Waiting for records'}</Text>
         </View>
-        <View style={{backgroundColor: isDemoBuild ? '#FFF4D6' : '#E8F6EF', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6}}>
-          <Text style={{fontSize: 10, fontWeight: '800', color: isDemoBuild ? colors.amber : colors.green}}>{isDemoBuild ? 'SAMPLE' : 'UPDATED'}</Text>
+        <View style={{backgroundColor: sampleWorkspace ? '#FFF4D6' : '#E8F6EF', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6}}>
+          <Text style={{fontSize: 10, fontWeight: '800', color: sampleWorkspace ? colors.amber : colors.green}}>{sampleWorkspace ? 'SAMPLE' : 'UPDATED'}</Text>
         </View>
       </View>
       <View accessibilityRole="tablist" style={{flexDirection: 'row', backgroundColor: '#F0F3FF', borderRadius: 12, padding: 4}}>

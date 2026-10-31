@@ -42,7 +42,11 @@
           "backgroundColor": "#F6F8FD"
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "@react-native-google-signin/google-signin",
+        { "iosUrlScheme": "com.googleusercontent.apps.not-configured-yet" }
+      ]
     ],
     "extra": {
       "router": {

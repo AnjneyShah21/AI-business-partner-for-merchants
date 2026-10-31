@@ -1,4 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
+import { Asset } from 'expo-asset';
+import * as FileSystem from 'expo-file-system/legacy';
+import Papa from 'papaparse';
 
 type DemoRecord = Record<string, any>;
 type DemoState = {
@@ -16,7 +19,7 @@ type DemoState = {
   conversations: Record<string, DemoRecord[]>;
 };
 
-const STATE_KEY = 'business_partner_demo_state_v1';
+const STATE_KEY = 'business_partner_demo_state_v3';
 const now = () => new Date().toISOString();
 const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const day = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 60 * 60 * 1000).toISOString();
@@ -59,11 +62,44 @@ function initialState(): DemoState {
 }
 
 async function loadState(): Promise<DemoState> {
+  const fresh = initialState();
+  fresh.transactions = await loadBundledTransactions();
   try {
     const saved = await SecureStore.getItemAsync(STATE_KEY);
-    if (saved) return { ...initialState(), ...JSON.parse(saved) } as DemoState;
+    if (saved) return { ...fresh, ...JSON.parse(saved) } as DemoState;
   } catch { /* use a fresh sample workspace when saved state is unreadable */ }
-  return initialState();
+  return fresh;
+}
+
+let sampleTransactionsPromise: Promise<DemoRecord[]> | undefined;
+async function loadBundledTransactions(): Promise<DemoRecord[]> {
+  sampleTransactionsPromise ??= (async () => {
+    const asset = Asset.fromModule(require('../../assets/demo/merchant_transactions_sample.csv'));
+    await asset.downloadAsync();
+    const csv = await FileSystem.readAsStringAsync(asset.localUri ?? asset.uri, {encoding: FileSystem.EncodingType.UTF8});
+    const parsed = Papa.parse<Record<string, string>>(csv, {header: true, skipEmptyLines: 'greedy'});
+    if (parsed.errors.length || parsed.data.length === 0) throw new Error('The bundled sample transaction CSV could not be read.');
+    const today = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date());
+    const [year, month, date] = today.split('-').map(Number);
+    const currentIndiaHour = Number(new Intl.DateTimeFormat('en-GB', {timeZone: 'Asia/Kolkata', hour: '2-digit', hourCycle: 'h23'}).format(new Date()));
+    return parsed.data.map((row, index) => {
+      const amount = Number(row.amount);
+      const daysAgo = Number(row.days_ago);
+      const hour = Number(row.hour_ist);
+      if (!row.external_id?.startsWith('SAMPLE-') || !Number.isFinite(amount) || amount <= 0 ||
+          !['succeeded', 'failed', 'refunded'].includes(row.status) || !Number.isInteger(daysAgo) || daysAgo < 0 ||
+          !Number.isInteger(hour) || hour < 0 || hour > 23) {
+        throw new Error(`Invalid row ${index + 2} in the bundled sample transaction CSV.`);
+      }
+      const sampleHour = daysAgo === 0 ? Math.min(hour, currentIndiaHour) : hour;
+      const occurredAt = new Date(Date.UTC(year, month - 1, date - daysAgo, sampleHour) - 330 * 60 * 1000).toISOString();
+      return {id: `sample-${row.external_id}`, external_id: row.external_id, amount: amount.toFixed(2), status: row.status,
+        payment_method: row.payment_method || 'UPI', occurred_at: occurredAt, source: 'sample_data',
+        sender_name: row.sender_name || null, sender_reference: row.sender_reference || null,
+        sender_contact: row.sender_contact || null};
+    });
+  })();
+  return sampleTransactionsPromise;
 }
 
 async function saveState(state: DemoState) {
@@ -74,6 +110,21 @@ function response<T>(value: unknown): T { return value as T; }
 
 function inr(value: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(value);
+}
+
+function sumTransactions(transactions: DemoRecord[], start: number, end = Date.now()) {
+  const rows = transactions.filter(tx => {
+    const timestamp = new Date(tx.occurred_at).getTime();
+    return timestamp >= start && timestamp < end;
+  });
+  const successful = rows.filter(tx => tx.status === 'succeeded');
+  const refunds = rows.filter(tx => tx.status === 'refunded');
+  return {
+    rows,
+    collected: successful.reduce((sum, tx) => sum + Number(tx.amount), 0),
+    successfulCount: successful.length,
+    refunds: refunds.reduce((sum, tx) => sum + Math.abs(Number(tx.amount)), 0),
+  };
 }
 
 function demoAssistantAnswer(question: string, state: DemoState, responseLanguage?: string): { answer: string; sources: string[] } {
@@ -88,7 +139,10 @@ function demoAssistantAnswer(question: string, state: DemoState, responseLanguag
     : /(?:last|past|previous)\s*(?:30|thirty)\s*days|last month|this month/.test(q) ? 30
       : /yesterday/.test(q) ? 2 : 1;
   const startMs = nowMs - days * 24 * hour;
-  const transactions = state.transactions.filter(tx => new Date(tx.occurred_at).getTime() >= startMs);
+  const transactions = state.transactions.filter(tx => {
+    const timestamp = new Date(tx.occurred_at).getTime();
+    return timestamp >= startMs && timestamp <= nowMs;
+  });
   const successful = transactions.filter(tx => tx.status === 'succeeded');
   const collected = successful.reduce((sum, tx) => sum + Number(tx.amount), 0);
   const refunds = transactions.filter(tx => tx.status === 'refunded')
@@ -200,7 +254,11 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
   let changed = false;
 
   if (route === '/dashboard/sales') {
-    result = { currency: 'INR', collection_total: '2650.00', successful_transactions: 3, refunds_total: '199.00', pending_settlements: '3210.00', source: 'fictional demo records', as_of: now(), data_available: true };
+    const days = Math.min(365, Math.max(1, Number(url.searchParams.get('days') ?? 1)));
+    const summary = sumTransactions(state.transactions, Date.now() - days * 24 * 60 * 60 * 1000);
+    const pending = state.settlements.filter(item => item.status === 'pending').reduce((total, item) => total + Number(item.amount), 0);
+    result = { currency: 'INR', collection_total: summary.collected.toFixed(2), successful_transactions: summary.successfulCount,
+      refunds_total: summary.refunds.toFixed(2), pending_settlements: pending.toFixed(2), source: 'fictional sample CSV', as_of: now(), data_available: summary.rows.length > 0 };
   } else if (route === '/analytics/timeline') {
     const period = url.searchParams.get('period') ?? 'day';
     const count = period === 'day' ? 24 : period === 'week' ? 7 : 30;
@@ -217,6 +275,7 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
     const localDate = (value: string) => new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date(value));
     const localHour = (value: string) => Number(new Intl.DateTimeFormat('en-GB', {timeZone: 'Asia/Kolkata', hour: '2-digit', hourCycle: 'h23'}).format(new Date(value)));
     for (const transaction of state.transactions) {
+      if (new Date(transaction.occurred_at).getTime() > Date.now()) continue;
       const bucketIndex = period === 'day' ? (localDate(transaction.occurred_at) === todayText ? localHour(transaction.occurred_at) : -1) : dates.indexOf(localDate(transaction.occurred_at));
       if (bucketIndex < 0 || bucketIndex >= buckets.length) continue;
       if (transaction.status === 'succeeded') {
@@ -228,10 +287,9 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
     const refunds = buckets.reduce((sum, bucket) => sum + bucket.refunds, 0);
     result = {period, timezone: 'Asia/Kolkata', as_of: now(), start: `${dates[0]}T00:00:00+05:30`, end: now(), buckets: buckets.map(bucket => ({...bucket, collections: bucket.collections.toFixed(2), refunds: bucket.refunds.toFixed(2)})), collections: collections.toFixed(2), refunds: refunds.toFixed(2), successful_transactions: buckets.reduce((sum, bucket) => sum + bucket.successful_transactions, 0), source: 'fictional sample records', collections_are_not_profit: true};
   } else if (route === '/dashboard/briefing') {
-    const successfulToday = state.transactions.filter(tx => tx.status === 'succeeded' && Date.now() - new Date(tx.occurred_at).getTime() <= 24 * 60 * 60 * 1000);
-    const refundsToday = state.transactions.filter(tx => tx.status === 'refunded' && Date.now() - new Date(tx.occurred_at).getTime() <= 24 * 60 * 60 * 1000);
-    const collections = successfulToday.reduce((sum, tx) => sum + Number(tx.amount), 0);
-    const refunds = refundsToday.reduce((sum, tx) => sum + Math.abs(Number(tx.amount)), 0);
+    const daily = sumTransactions(state.transactions, new Date(new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date()) + 'T00:00:00+05:30').getTime());
+    const collections = daily.collected;
+    const refunds = daily.refunds;
     const hindi = url.searchParams.get('language') === 'hi';
     const lowStock = state.products.filter(product => Number(product.quantity) <= Number(product.reorder_level));
     const pending = state.settlements.filter(item => item.status === 'pending');
@@ -245,11 +303,21 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
       ? `${pending.length} नमूना सेटलमेंट लंबित हैं; तारीख की गारंटी नहीं है।`
       : `${pending.length} fictional settlements are pending; dates are not guaranteed.`});
     result = {language: hindi ? 'hi' : 'en', timezone:'Asia/Kolkata', as_of:now(), data_available:true,
-      collections:collections.toFixed(2), successful_transactions:successfulToday.length, refunds:refunds.toFixed(2),
-      change_vs_yesterday_percent:null, insights, source:'fictional sample records', collections_are_not_profit:true};
-  } else if (route === '/transactions' && method === 'GET') result = state.transactions;
+      collections:collections.toFixed(2), successful_transactions:daily.successfulCount, refunds:refunds.toFixed(2),
+      change_vs_yesterday_percent:null, insights, source:'fictional sample CSV', collections_are_not_profit:true};
+  } else if (route === '/transactions' && method === 'GET') {
+    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? 50)));
+    result = [...state.transactions].sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime()).slice(0, limit);
+  } else if (route.startsWith('/transactions/') && method === 'GET') {
+    const transactionId = decodeURIComponent(route.slice('/transactions/'.length));
+    result = state.transactions.find(transaction => transaction.id === transactionId);
+    if (!result) throw new Error('Sample transaction was not found.');
+  }
   else if (route === '/cashflow/settlements') result = state.settlements;
-  else if (route === '/cashflow/forecast') result = { known_pending_receipts_next_24h: '3210.00', settlement_count: 1, forecast_type: 'sample expected dates', assumptions: ['Fictional records only.'], uncertainty: 'Not a guaranteed receipt.' };
+  else if (route === '/cashflow/forecast') {
+    const pending = state.settlements.filter(item => item.status === 'pending');
+    result = { known_pending_receipts_next_24h: pending.reduce((sum, item) => sum + Number(item.amount), 0).toFixed(2), settlement_count: pending.length, forecast_type: 'sample expected dates', assumptions: ['Fictional records only.'], uncertainty: 'Not a guaranteed receipt.' };
+  }
   else if (route === '/inventory' && method === 'GET') result = state.products;
   else if (route === '/inventory' && method === 'POST') {
     const row = { id: id('product'), sku: null, quantity: 0, reorder_level: 0, unit: 'unit', active: true, ...body };
@@ -293,8 +361,24 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
     { key: 'otp', purpose: 'merchant authentication', status: 'demo_only', prerequisite: 'This sample workspace does not authenticate a Paytm account.' },
     { key: 'llm', purpose: 'AI assistant', status: 'demo_only', prerequisite: 'Answers use demo rules and records, not a live AI provider.' },
   ];
-  else if (route === '/analytics/period-comparison') result = { current_days: Number(url.searchParams.get('days') ?? 7), current_collections: '2650.00', previous_collections: '2060.00', change_percent: '28.64', comparison_available: true, metric: 'fictional successful collections; not revenue or profit' };
-  else if (route === '/analytics/peak-hours') result = { period_days: Number(url.searchParams.get('days') ?? 30), hours: [{ hour: 9, successful_transactions: 8 }, { hour: 13, successful_transactions: 12 }, { hour: 18, successful_transactions: 17 }, { hour: 20, successful_transactions: 11 }], source: 'fictional demo records' };
+  else if (route === '/analytics/period-comparison') {
+    const days = Math.min(365, Math.max(1, Number(url.searchParams.get('days') ?? 7)));
+    const current = sumTransactions(state.transactions, Date.now() - days * 24 * 60 * 60 * 1000);
+    const previous = sumTransactions(state.transactions, Date.now() - 2 * days * 24 * 60 * 60 * 1000, Date.now() - days * 24 * 60 * 60 * 1000);
+    const change = previous.collected ? ((current.collected - previous.collected) / previous.collected * 100).toFixed(2) : null;
+    result = { current_days: days, current_collections: current.collected.toFixed(2), previous_collections: previous.collected.toFixed(2), change_percent: change,
+      comparison_available: previous.collected > 0, metric: 'fictional successful collections; not revenue or profit' };
+  }
+  else if (route === '/analytics/peak-hours') {
+    const periodDays = Math.min(365, Math.max(1, Number(url.searchParams.get('days') ?? 30)));
+    const byHour = new Map<number, number>();
+    for (const tx of state.transactions) {
+      if (tx.status !== 'succeeded' || Date.now() - new Date(tx.occurred_at).getTime() > periodDays * 24 * 60 * 60 * 1000) continue;
+      const hour = Number(new Intl.DateTimeFormat('en-GB', {timeZone: 'Asia/Kolkata', hour: '2-digit', hourCycle: 'h23'}).format(new Date(tx.occurred_at)));
+      byHour.set(hour, (byHour.get(hour) ?? 0) + 1);
+    }
+    result = { period_days: periodDays, hours: [...byHour].map(([hour, successful_transactions]) => ({hour, successful_transactions})).sort((a, b) => a.hour - b.hour), source: 'fictional sample CSV' };
+  }
   else if (route === '/analytics/anomalies') result = { available: true, alerts: [], method: 'sample comparison; no alert threshold crossed', collections_are_not_profit: true };
   else if (route === '/conversations' && method === 'POST') { const conversationId = id('conversation'); state.conversations[conversationId] = []; result = { id: conversationId, title: 'Business assistant', created_at: now() }; changed = true; }
   else if (/^\/conversations\/[^/]+\/messages$/.test(route) && method === 'GET') result = state.conversations[route.split('/')[2]] ?? [];
@@ -314,6 +398,10 @@ export async function demoApi<T>(path: string, init: RequestInit = {}): Promise<
 
 export async function enterDemoWorkspace() {
   await SecureStore.setItemAsync('session_token', 'offline-demo-workspace');
+}
+
+export async function isSampleWorkspace(): Promise<boolean> {
+  return (await SecureStore.getItemAsync('session_token')) === 'offline-demo-workspace';
 }
 
 export const isDemoBuild = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';

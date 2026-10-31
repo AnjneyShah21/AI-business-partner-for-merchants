@@ -2,13 +2,14 @@ import { PropsWithChildren } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { colors } from '@/theme/tokens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { isDemoBuild } from '@/services/demo';
+import { useSampleWorkspace } from '@/hooks/useSampleWorkspace';
 
 export function Screen({ title, subtitle, children }: PropsWithChildren<{title: string; subtitle?: string}>) {
  const insets=useSafeAreaInsets();
+ const sampleWorkspace=useSampleWorkspace();
  return <ScrollView style={s.page} contentContainerStyle={[s.content,{paddingTop:insets.top+18,paddingBottom:insets.bottom+18}]}><Text style={s.title}>{title}</Text>
  {subtitle ? <Text style={s.subtitle}>{subtitle}</Text> : null}
- {isDemoBuild ? <View style={s.demoBanner}><Text style={s.demoText}>SAMPLE WORKSPACE · Fictional records only · No Paytm connection</Text></View> : null}
+ {sampleWorkspace ? <View style={s.demoBanner}><Text style={s.demoText}>SAMPLE WORKSPACE · Fictional records only · No Paytm connection</Text></View> : null}
  {children}</ScrollView>;
 }
 export function Card({ title, children }: PropsWithChildren<{title: string}>) {

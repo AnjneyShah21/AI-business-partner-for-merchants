@@ -17,7 +17,7 @@ class ProviderCapability:
 
 CAPABILITIES = (
     ProviderCapability("payments", "transaction and settlement sync", "not_configured", "Authorized merchant provider contract and credentials"),
-    ProviderCapability("otp", "merchant authentication", "not_configured", "Authorized OTP vendor, abuse controls and recovery flow"),
+    ProviderCapability("google_sign_in", "Google merchant authentication", "not_configured", "Google OAuth Web client ID and Android package/SHA-1 registration"),
     ProviderCapability("llm", "AI language generation", "disabled", "Approved LLM provider and data-processing review"),
     ProviderCapability("speech_to_text", "voice transcription", "not_configured", "Verified speech provider and language-level validation"),
     ProviderCapability("text_to_speech", "spoken responses", "not_configured", "Verified speech synthesis provider and language-level validation"),

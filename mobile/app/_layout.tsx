@@ -1,7 +1,7 @@
 import { Stack, usePathname, useRouter } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StatusBar } from 'expo-status-bar';
-import { Component, useEffect, useRef, useState, type PropsWithChildren } from 'react';
+import { Component, useEffect, useState, type PropsWithChildren } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -15,14 +15,14 @@ export default function RootLayout() {
 }
 
 function SessionGate({children}:PropsWithChildren){
- const pathname=usePathname();const router=useRouter();const initialPathname=useRef(pathname);const [checked,setChecked]=useState(false);
- useEffect(()=>{let active=true;const initialPath=initialPathname.current;void SecureStore.getItemAsync('session_token').then(token=>{
+ const pathname=usePathname();const router=useRouter();const [checked,setChecked]=useState(false);
+ useEffect(()=>{let active=true;void SecureStore.getItemAsync('session_token').then(token=>{
   if(!active)return;
-  if(initialPath!=='/'&&!token)router.replace('/');
-  else if(initialPath==='/'&&token)router.replace('/(tabs)/home');
+  if(pathname!=='/'&&!token)router.replace('/');
+  else if(pathname==='/'&&token)router.replace('/(tabs)/home');
   setChecked(true);
- }).catch(()=>{if(active){if(initialPath!=='/')router.replace('/');setChecked(true);}});
- return()=>{active=false;};},[router]);
+ }).catch(()=>{if(active){if(pathname!=='/')router.replace('/');setChecked(true);}});
+ return()=>{active=false;};},[pathname,router]);
  if(!checked)return <View style={{flex:1,justifyContent:'center',alignItems:'center',gap:12,backgroundColor:colors.bg}}><ActivityIndicator color={colors.blue}/><Text style={{color:colors.muted,fontSize:14}}>Opening Business Partner…</Text></View>;
  return <>{children}</>;
 }

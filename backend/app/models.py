@@ -41,6 +41,9 @@ class Transaction(Base):
     payment_method: Mapped[str] = mapped_column(String(32), default="unknown")
     source: Mapped[str] = mapped_column(String(32), default="provider")
     external_id: Mapped[str | None] = mapped_column(String(120))
+    sender_name: Mapped[str | None] = mapped_column(String(180))
+    sender_reference: Mapped[str | None] = mapped_column(String(180))
+    sender_contact: Mapped[str | None] = mapped_column(String(180))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
