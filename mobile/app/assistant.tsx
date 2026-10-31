@@ -24,6 +24,16 @@ type PendingDraft = NonNullable<Answer['pending_receivable_draft']> & {idempoten
 const englishQuestions = ["How much did I collect today?", 'What settlements are pending?', 'Which products need reordering?'];
 const hindiQuestions = ['आज कितना कलेक्शन हुआ?', 'कितने सेटलमेंट लंबित हैं?', 'किन चीज़ों का स्टॉक कम है?'];
 
+function spokenCurrencyText(text: string) {
+  const unit = /[\u0900-\u097f]/.test(text) ? 'रुपये' : 'rupees';
+  return text
+    .replace(/₹\s*([\d,]+(?:\.\d{1,2})?)/g, `$1 ${unit}`)
+    .replace(/\b(?:Rs\.?|INR)\s*([\d,]+(?:\.\d{1,2})?)/gi, `$1 ${unit}`)
+    .replace(/([\d,]+(?:\.\d{1,2})?)\s*(?:INR|Rs\.?)(?![A-Za-z])/gi, `$1 ${unit}`)
+    .replace(/₹/g, unit)
+    .replace(/\b(?:Rs\.?|INR)\b/gi, unit);
+}
+
 export default function Assistant() {
   const sampleWorkspace = useSampleWorkspace();
   const insets = useSafeAreaInsets();
@@ -131,13 +141,14 @@ export default function Assistant() {
   }
 
   async function speakOnDevice(text: string, messageId: string, reason?: string) {
+    const speechText = spokenCurrencyText(text);
     if (reason) setVoiceError(reason);
     cleanupAudio();
-    const language = /[\u0900-\u097f]/i.test(text) ? 'hi-IN' : 'en-IN';
+    const language = /[\u0900-\u097f]/i.test(speechText) ? 'hi-IN' : 'en-IN';
     const available = await Speech.getAvailableVoicesAsync().catch(() => []);
     const localVoice = available.find(voice => voice.language.toLowerCase() === language.toLowerCase() && /embedded|local|offline/i.test(voice.identifier));
     setSpeakingMessageId(messageId);
-    Speech.speak(text, {
+    Speech.speak(speechText, {
       language: localVoice?.language ?? language, ...(localVoice ? {voice: localVoice.identifier} : {}), rate: 0.94, pitch: 1, volume: 1,
       onDone: () => setSpeakingMessageId(null), onStopped: () => setSpeakingMessageId(null),
       onError: () => { setSpeakingMessageId(null); setVoiceError('Android could not play the fallback voice. Check the installed speech service and media volume.'); },
@@ -145,19 +156,20 @@ export default function Assistant() {
   }
 
   async function speakAnswer(text: string, messageId: string) {
+    const speechText = spokenCurrencyText(text);
     setVoiceError('');
     setSpeechLoading(true);
     Speech.stop();
     try {
       if (sampleWorkspace) throw new Error('ElevenLabs is available after the app is connected to a signed-in backend.');
-      const bytes = await requestElevenLabsSpeech(text.slice(0, 2500), voiceId);
+      const bytes = await requestElevenLabsSpeech(speechText.slice(0, 2500), voiceId);
       await setAudioModeAsync({playsInSilentMode: true});
       cleanupAudio();
       const file = new File(Paths.cache, `business-partner-${Date.now()}.mp3`);
       file.create({intermediates: true, overwrite: true});
       await file.write(bytes);
       audioFile.current = file;
-      pendingPlaybackFallback.current = {text, messageId};
+      pendingPlaybackFallback.current = {text: speechText, messageId};
       audioPlayer.replace({uri: file.uri});
       setSpeakingMessageId(messageId);
       audioPlayer.play();
@@ -165,7 +177,7 @@ export default function Assistant() {
       pendingPlaybackFallback.current = null;
       const detail = e instanceof Error ? e.message : 'ElevenLabs speech could not be played.';
       if (/[\u0900-\u097f]/i.test(text)) {
-        await speakOnDevice(text, messageId, sampleWorkspace ? 'Offline sample uses the installed Hindi voice. Configure the backend to enable ElevenLabs.' : 'ElevenLabs is unavailable. Using the installed Hindi voice for this reply.');
+        await speakOnDevice(speechText, messageId, sampleWorkspace ? 'Offline sample uses the installed Hindi voice. Configure the backend to enable ElevenLabs.' : 'ElevenLabs is unavailable. Using the installed Hindi voice for this reply.');
         return;
       }
       setVoiceError(sampleWorkspace ? 'Offline sample uses the installed Android voice. Configure the backend to enable ElevenLabs.' : `${detail} Using the installed device voice for this reply.`);
@@ -173,7 +185,7 @@ export default function Assistant() {
       const available = await Speech.getAvailableVoicesAsync().catch(() => []);
       const localEnglish = available.find(voice => voice.language.toLowerCase().startsWith('en') && /embedded|local|offline/i.test(voice.identifier));
       setSpeakingMessageId(messageId);
-      Speech.speak(text, {
+      Speech.speak(speechText, {
         language: localEnglish?.language ?? 'en-US', ...(localEnglish ? {voice: localEnglish.identifier} : {}), rate: 0.94, pitch: 1, volume: 1,
         onDone: () => setSpeakingMessageId(null), onStopped: () => setSpeakingMessageId(null),
         onError: () => { setSpeakingMessageId(null); setVoiceError(`${detail} Android could not play its fallback voice either.`); },
