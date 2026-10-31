@@ -10,6 +10,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import Papa from 'papaparse';
 import { z } from 'zod';
 import { TransactionRow, type Transaction } from '../(tabs)/home';
+import { useSampleWorkspace } from '@/hooks/useSampleWorkspace';
 
 const modules: Record<string,{title:string,path:string;hint:string}> = {
  transactions:{title:'Transactions',path:'/transactions',hint:'Connected payment records'},
@@ -37,7 +38,7 @@ function display(value: unknown): string {
 export default function ModuleScreen(){
  const {module}=useLocalSearchParams<{module:string}>(); const config=modules[module]??modules.reports;
  const queryClient=useQueryClient(); const [name,setName]=useState(''); const [extra,setExtra]=useState(''); const [third,setThird]=useState(''); const [fourth,setFourth]=useState(''); const [message,setMessage]=useState(''); const [busy,setBusy]=useState(false);
- const query=useQuery({queryKey:['module',module],queryFn:()=>api<unknown>(config.path)});
+ const query=useQuery({queryKey:['module',module],queryFn:()=>api<unknown>(config.path),enabled:module!=='imports'});
  const canCreate=['inventory','customers','suppliers','stores','staff','campaigns','purchase-orders'].includes(module);
  async function create(){setBusy(true);setMessage('');try{
   const path=module==='inventory'?'/inventory':`/${module}`;
@@ -51,7 +52,7 @@ export default function ModuleScreen(){
  }catch(e){setMessage(e instanceof Error?e.message:'Could not save this record.');}finally{setBusy(false)}}
  const rows=Array.isArray(query.data)?query.data:query.data?[query.data]:[];
  return <Screen title={config.title} subtitle={config.hint}>
-  {query.isLoading?<ActivityIndicator color={colors.blue}/>:query.isError?<Card title="Data unavailable"><Note>{query.error.message}</Note></Card>:rows.length===0?<Card title="No records"><Note>No records are available for this merchant yet. Connected providers may be required.</Note></Card>:module==='transactions'?rows.map((row,i)=><TransactionRow key={String((row as Record<string,unknown>).id??i)} transaction={row as Transaction}/>):rows.map((row,i)=><Card key={String((row as Record<string,unknown>).id??i)} title={String((row as Record<string,unknown>).name??(row as Record<string,unknown>).id??`Record ${i+1}`)}><Text style={{color:colors.ink,fontSize:13,lineHeight:20}}>{display(row)}</Text>{module==='customers'?<ConsentButton id={String((row as Record<string,unknown>).id)} onSaved={()=>queryClient.invalidateQueries({queryKey:['module',module]})}/>:null}{module==='approvals'?<ApprovalActions id={String((row as Record<string,unknown>).id)} status={String((row as Record<string,unknown>).status)} onSaved={()=>queryClient.invalidateQueries({queryKey:['module',module]})}/>:null}{module==='inventory'?<PrepareProposal kind="purchase_order" payload={{product_id:String((row as Record<string,unknown>).id),product_name:String((row as Record<string,unknown>).name),intent:'reorder review'}} label="Prepare reorder proposal"/>:null}{module==='credit'?<PrepareProposal kind="credit_application" payload={{offer_id:String((row as Record<string,unknown>).id)}} label="Prepare application proposal"/>:null}{module==='campaigns'?<CampaignApproval id={String((row as Record<string,unknown>).id)} onSaved={()=>queryClient.invalidateQueries({queryKey:['module',module]})}/>:null}</Card>)}
+  {module!=='imports'?(query.isLoading?<ActivityIndicator color={colors.blue}/>:query.isError?<Card title="Data unavailable"><Note>{query.error.message}</Note></Card>:rows.length===0?<Card title="No records"><Note>No records are available for this merchant yet. Connected providers may be required.</Note></Card>:module==='transactions'?rows.map((row,i)=><TransactionRow key={String((row as Record<string,unknown>).id??i)} transaction={row as Transaction}/>):rows.map((row,i)=><Card key={String((row as Record<string,unknown>).id??i)} title={String((row as Record<string,unknown>).name??(row as Record<string,unknown>).id??`Record ${i+1}`)}><Text style={{color:colors.ink,fontSize:13,lineHeight:20}}>{display(row)}</Text>{module==='customers'?<ConsentButton id={String((row as Record<string,unknown>).id)} onSaved={()=>queryClient.invalidateQueries({queryKey:['module',module]})}/>:null}{module==='approvals'?<ApprovalActions id={String((row as Record<string,unknown>).id)} status={String((row as Record<string,unknown>).status)} onSaved={()=>queryClient.invalidateQueries({queryKey:['module',module]})}/>:null}{module==='inventory'?<PrepareProposal kind="purchase_order" payload={{product_id:String((row as Record<string,unknown>).id),product_name:String((row as Record<string,unknown>).name),intent:'reorder review'}} label="Prepare reorder proposal"/>:null}{module==='credit'?<PrepareProposal kind="credit_application" payload={{offer_id:String((row as Record<string,unknown>).id)}} label="Prepare application proposal"/>:null}{module==='campaigns'?<CampaignApproval id={String((row as Record<string,unknown>).id)} onSaved={()=>queryClient.invalidateQueries({queryKey:['module',module]})}/>:null}</Card>)):null}
   {canCreate?<Card title={`Add ${config.title.replace(/s$/,'').toLowerCase()}`}><TextInput value={name} onChangeText={setName} placeholder={module==='customers'?'Customer display name':module==='purchase-orders'?'Supplier ID':'Name'} style={{borderWidth:1,borderColor:colors.border,borderRadius:10,padding:12,color:colors.ink}}/>
     {['inventory','stores','staff','campaigns','purchase-orders'].includes(module)?<TextInput value={extra} onChangeText={setExtra} placeholder={module==='inventory'?'Starting quantity':module==='stores'?'Store code':module==='campaigns'?'Draft message':module==='purchase-orders'?'Product ID':'Role'} keyboardType={module==='inventory'?'number-pad':'default'} multiline={module==='campaigns'} style={{borderWidth:1,borderColor:colors.border,borderRadius:10,padding:12,color:colors.ink}}/>:null}
     {module==='purchase-orders'?<><TextInput value={third} onChangeText={setThird} placeholder="Quantity" keyboardType="number-pad" style={{borderWidth:1,borderColor:colors.border,borderRadius:10,padding:12,color:colors.ink}}/><TextInput value={fourth} onChangeText={setFourth} placeholder="Unit cost (INR)" keyboardType="decimal-pad" style={{borderWidth:1,borderColor:colors.border,borderRadius:10,padding:12,color:colors.ink}}/></>:null}
@@ -92,6 +93,7 @@ const csvRowSchema=z.object({
  sender_contact:z.string().trim().max(180).optional(),
 });
 function ImportTransactions(){
+ const sampleWorkspace=useSampleWorkspace();
  const [busy,setBusy]=useState(false);const [result,setResult]=useState('');
  async function selectAndImport(){setBusy(true);setResult('');try{
   const selection=await DocumentPicker.getDocumentAsync({type:['text/csv','text/comma-separated-values','application/vnd.ms-excel'],copyToCacheDirectory:true});
@@ -105,6 +107,8 @@ function ImportTransactions(){
   const imported=await api<{accepted:number;duplicates_skipped:number;provider_connected:boolean}>('/integrations/import/transactions',{method:'POST',body:JSON.stringify({transactions:rows})});
   setResult(`Imported ${imported.accepted} row(s); skipped ${imported.duplicates_skipped} duplicate(s). Source: merchant import. No provider connection was created.`);
  }catch(e){setResult(e instanceof Error?e.message:'Could not import that file.');}finally{setBusy(false)}}
- return <Card title="Merchant-authorized transaction import"><Note>Use a CSV you obtained from an authorized merchant source. Required columns: external_id, amount, status, occurred_at. Optional sender columns: sender_name, sender_reference, sender_contact. Status must be succeeded, failed or refunded; timestamps must include a timezone. Imports are labeled separately from live provider feeds.</Note>
-   <Pressable disabled={busy} onPress={selectAndImport} style={{backgroundColor:colors.blue,padding:13,borderRadius:10,alignItems:'center'}}><Text style={{color:'white',fontWeight:'700'}}>{busy?'Validating and importing…':'Choose CSV file'}</Text></Pressable>{result?<Note>{result}</Note>:null}</Card>;
+ return <Card title="Merchant-authorized transaction import">{sampleWorkspace
+   ? <Note>CSV import requires an authenticated backend workspace. The offline presentation sample stays read-only and contains only fictional records.</Note>
+   : <><Note>Use a CSV you obtained from an authorized merchant source. Required columns: external_id, amount, status, occurred_at. Optional sender columns: sender_name, sender_reference, sender_contact. Status must be succeeded, failed or refunded; timestamps must include a timezone. Imports are labeled separately from live provider feeds.</Note>
+     <Pressable disabled={busy} onPress={selectAndImport} style={{backgroundColor:colors.blue,padding:13,borderRadius:10,alignItems:'center'}}><Text style={{color:'white',fontWeight:'700'}}>{busy?'Validating and importing…':'Choose CSV file'}</Text></Pressable>{result?<Note>{result}</Note>:null}</>}</Card>;
 }
