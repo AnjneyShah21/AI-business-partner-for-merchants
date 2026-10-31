@@ -51,6 +51,8 @@ class SaathiWakeService : Service(), RecognitionListener, TextToSpeech.OnInitLis
     private const val QUERY_WINDOW_MS = 12_000L
     private const val CONFIRM_WINDOW_MS = 25_000L
     private const val RESTART_DELAY_MS = 650L
+    private const val SYSTEM_RECOGNIZER_TIMEOUT_MS = 8_000L
+    private const val UNAVAILABLE_RETRY_MS = 30_000L
   }
 
   private val handler = Handler(Looper.getMainLooper())
@@ -76,6 +78,19 @@ class SaathiWakeService : Service(), RecognitionListener, TextToSpeech.OnInitLis
   private var stopAfterSpeech = false
   private var preferOnDevice = true
   private var fellBackToSystem = false
+  private var awaitingSystemRecognizerReady = false
+
+  private val systemRecognizerTimeout = Runnable {
+    if (awaitingSystemRecognizerReady && prefs.getBoolean(PREF_RUNNING, false)) {
+      awaitingSystemRecognizerReady = false
+      isListening = false
+      recreateRecognizer()
+      val languageName = if (language == "hi") "Hindi (India)" else "English (India)"
+      updateNotification("$languageName speech isn't available yet. Install or enable it in Android speech settings; Saathi will retry.")
+      Log.w(LOG_TAG, "$languageName recognition did not become ready; retrying later")
+      startRecognitionSoon(UNAVAILABLE_RETRY_MS)
+    }
+  }
 
   private val questionWindow = Runnable {
     if (awaitingQuestion && !processing) {
@@ -214,6 +229,11 @@ class SaathiWakeService : Service(), RecognitionListener, TextToSpeech.OnInitLis
     try {
       val current = recognizer ?: createRecognizer().also { recognizer = it }
       val locale = if (language == "hi") "hi-IN" else "en-IN"
+      if (!preferOnDevice) {
+        awaitingSystemRecognizerReady = true
+        handler.removeCallbacks(systemRecognizerTimeout)
+        handler.postDelayed(systemRecognizerTimeout, SYSTEM_RECOGNIZER_TIMEOUT_MS)
+      }
       val recognitionIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
@@ -228,7 +248,11 @@ class SaathiWakeService : Service(), RecognitionListener, TextToSpeech.OnInitLis
       }
       current.startListening(recognitionIntent)
       isListening = true
-      updateNotification(if (awaitingConfirmation) "Listening for your save confirmation" else if (awaitingQuestion) "Listening for your question" else "Say ‘Saathi’ to ask about your business")
+      if (awaitingSystemRecognizerReady) {
+        updateNotification("Connecting to Android speech recognition")
+      } else {
+        updateNotification(if (awaitingConfirmation) "Listening for your save confirmation" else if (awaitingQuestion) "Listening for your question" else "Say ‘Saathi’ to ask about your business")
+      }
     } catch (error: Exception) {
       Log.w(LOG_TAG, "Speech recognition could not start", error)
       isListening = false
@@ -258,13 +282,19 @@ class SaathiWakeService : Service(), RecognitionListener, TextToSpeech.OnInitLis
     recognizer = null
   }
 
-  override fun onReadyForSpeech(params: android.os.Bundle?) = Unit
+  override fun onReadyForSpeech(params: android.os.Bundle?) {
+    handler.removeCallbacks(systemRecognizerTimeout)
+    awaitingSystemRecognizerReady = false
+    updateNotification(if (awaitingConfirmation) "Listening for your save confirmation" else if (awaitingQuestion) "Listening for your question" else "Say ‘Saathi’ to ask about your business")
+  }
   override fun onBeginningOfSpeech() = Unit
   override fun onRmsChanged(rmsdB: Float) = Unit
   override fun onBufferReceived(buffer: ByteArray?) = Unit
   override fun onEndOfSpeech() { isListening = false }
 
   override fun onResults(results: android.os.Bundle?) {
+    handler.removeCallbacks(systemRecognizerTimeout)
+    awaitingSystemRecognizerReady = false
     isListening = false
     val transcript = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
     recreateRecognizer()
@@ -279,6 +309,8 @@ class SaathiWakeService : Service(), RecognitionListener, TextToSpeech.OnInitLis
   override fun onEvent(eventType: Int, params: android.os.Bundle?) = Unit
 
   override fun onError(error: Int) {
+    handler.removeCallbacks(systemRecognizerTimeout)
+    awaitingSystemRecognizerReady = false
     isListening = false
     recreateRecognizer()
     if (!prefs.getBoolean(PREF_RUNNING, false) || processing || ttsSpeaking) return
