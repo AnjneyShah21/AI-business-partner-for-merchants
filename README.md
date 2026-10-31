@@ -75,7 +75,7 @@ During the first Blueprint setup, provide these values in Render's secret/enviro
 
 - `DATABASE_URL`: a dedicated PostgreSQL database for the web branch. Do not reuse the Android app's database; the branches have separate schemas and user data. Neon URLs beginning with `postgresql://` are supported.
 - `SUPABASE_URL` and `SUPABASE_ANON_KEY`: the web frontend's Supabase Auth project values.
-- `CORS_ORIGINS`: a JSON list containing the exact deployed frontend origin, for example `["https://your-site.example"]`.
+- `CORS_ORIGINS` is preconfigured for `https://ai-business-partner-for-merchants.vercel.app`. Update the Render Blueprint value if the frontend moves to a different domain.
 
 Render generates `JWT_SECRET`. `AI_API_KEY` is optional for the API to start; add a Sarvam key in the Render service environment to enable web assistant responses. Set the frontend's `NEXT_PUBLIC_API_BASE_URL` to the deployed API origin without `/api/v1`, then redeploy the frontend. The backend docs are at `/api/v1/docs`, and `/health/ready` checks database connectivity.
 
