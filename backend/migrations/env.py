@@ -6,7 +6,7 @@ from app.core.db import Base
 from app import models  # noqa: F401
 
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().sqlalchemy_database_url.replace("%", "%%"))
+config.set_main_option("sqlalchemy.url", get_settings().sqlalchemy_migration_database_url.replace("%", "%%"))
 if config.config_file_name: fileConfig(config.config_file_name)
 target_metadata = Base.metadata
 
