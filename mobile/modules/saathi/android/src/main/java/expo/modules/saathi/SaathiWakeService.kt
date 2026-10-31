@@ -221,7 +221,9 @@ class SaathiWakeService : Service(), RecognitionListener, TextToSpeech.OnInitLis
         putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, false)
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-        putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+        // Keep the on-device recognizer offline when available, but let Android's
+        // configured service use its network fallback if the locale pack is missing.
+        putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOnDevice)
         putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
       }
       current.startListening(recognitionIntent)
@@ -291,6 +293,15 @@ class SaathiWakeService : Service(), RecognitionListener, TextToSpeech.OnInitLis
       preferOnDevice = false
       fellBackToSystem = true
       Log.i(LOG_TAG, "Offline recognition is unavailable for selected locale; switching to Android speech service")
+    } else if (fellBackToSystem && error in setOf(
+        SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED,
+        SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE
+      )) {
+      val languageName = if (language == "hi") "Hindi (India)" else "English (India)"
+      updateNotification("$languageName speech is unavailable. Install or enable it in Android speech settings; Saathi will retry.")
+      Log.w(LOG_TAG, "$languageName speech is unavailable in the configured Android recognition service")
+      startRecognitionSoon(30_000L)
+      return
     } else if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
       Log.w(LOG_TAG, "Android speech recognition error $error; restarting")
     }
