@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
     @property
+    def sqlalchemy_database_url(self) -> str:
+        url = self.database_url.strip()
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+psycopg://", 1)
+        if url.startswith("postgres://"):
+            return url.replace("postgres://", "postgresql+psycopg://", 1)
+        return url
+
+    @property
     def assistant_configured(self) -> bool:
         return bool(self.ai_api_base_url.strip() and self.ai_api_key.get_secret_value() and self.ai_model.strip())
 
@@ -47,7 +56,7 @@ class Settings(BaseSettings):
             secret = self.jwt_secret.get_secret_value()
             if len(secret) < 32 or secret == "local-only-insecure-secret-change-me":
                 raise ValueError("JWT_SECRET must be a unique random value of at least 32 characters")
-            if not self.database_url.startswith("postgresql+"):
+            if not self.database_url.startswith(("postgresql+", "postgresql://", "postgres://")):
                 raise ValueError("Production requires PostgreSQL; SQLite is local/test only")
             if any("localhost" in origin or "127.0.0.1" in origin for origin in self.cors_origins):
                 raise ValueError("Production CORS origins must not include localhost")

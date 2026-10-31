@@ -67,6 +67,20 @@ This frontend branch includes a small FastAPI session bridge under `backend/` an
 
 No Android Stitch export or screenshots were present in the workspace. At the user's direction, the existing web concept preview is used as a temporary reference. This does not establish Android design parity. The Playwright project captures mobile and desktop screenshots to review layout; screenshot comparison against Stitch needs the actual Android artifacts.
 
+## Deploy the web API to Render
+
+The root `render.yaml` deploys only this branch's FastAPI backend as `paytm-saathi-web-api`; the Next.js frontend remains a separate service. In Render, create a Blueprint from the `web` branch and select the root `render.yaml`.
+
+During the first Blueprint setup, provide these values in Render's secret/environment form:
+
+- `DATABASE_URL`: a dedicated PostgreSQL database for the web branch. Do not reuse the Android app's database; the branches have separate schemas and user data. Neon URLs beginning with `postgresql://` are supported.
+- `SUPABASE_URL` and `SUPABASE_ANON_KEY`: the web frontend's Supabase Auth project values.
+- `CORS_ORIGINS`: a JSON list containing the exact deployed frontend origin, for example `["https://your-site.example"]`.
+
+Render generates `JWT_SECRET`. `AI_API_KEY` is optional for the API to start; add a Sarvam key in the Render service environment to enable web assistant responses. Set the frontend's `NEXT_PUBLIC_API_BASE_URL` to the deployed API origin without `/api/v1`, then redeploy the frontend. The backend docs are at `/api/v1/docs`, and `/health/ready` checks database connectivity.
+
+The web service keeps `PROVIDER_MODE=sandbox`; this branch does not have a live Paytm adapter. The Blueprint uses Render's Free web plan for preview use. Free services may be suspended or spin down, and a Free Render Postgres database expires after 30 days, so the Blueprint uses an external PostgreSQL URL instead of creating a Render database.
+
 ## Security and deployment
 
 The browser bundle contains no provider secrets or service-role key. The API bearer token is held in memory only and disappears on reload. Configure HTTPS, production CORS allowlists, CSP, monitoring, identity project/provider delivery, and a generated lockfile before release. The app adds baseline security headers; the hosting edge should enforce the final CSP and transport policy.
