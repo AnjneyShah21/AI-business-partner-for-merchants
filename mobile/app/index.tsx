@@ -3,7 +3,7 @@ import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'rea
 import { Redirect } from 'expo-router';
 import { GoogleSignin, isSuccessResponse } from '@react-native-google-signin/google-signin';
 import * as SecureStore from 'expo-secure-store';
-import { api } from '@/services/api';
+import { api, establishLocalWorkspace } from '@/services/api';
 import { enterDemoWorkspace, isDemoBuild } from '@/services/demo';
 import { colors } from '@/theme/tokens';
 
@@ -31,6 +31,12 @@ export default function Index() {
     } finally { setBusy(false); }
   }
   async function openDemo() { setBusy(true); setError(''); try { await enterDemoWorkspace(); setHasSession(true); } catch (e) { setError(e instanceof Error?e.message:'Could not open the sample workspace.'); } finally { setBusy(false); } }
+  async function openLocalAiWorkspace() {
+    setBusy(true); setError('');
+    try { await establishLocalWorkspace('Local AI Merchant'); setHasSession(true); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Could not connect to the local AI workspace.'); }
+    finally { setBusy(false); }
+  }
   return <ScrollView style={{flex:1,backgroundColor:colors.bg}} contentContainerStyle={{flexGrow:1,justifyContent:'center',paddingHorizontal:23,paddingTop:28,paddingBottom:30,gap:17}}>
     <View style={{alignItems:'center',gap:10,marginBottom:3}}>
       <View style={{width:90,height:90,borderRadius:25,backgroundColor:colors.navy,alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:'#164A88',shadowColor:colors.navy,shadowOpacity:0.18,shadowRadius:15,shadowOffset:{width:0,height:7},elevation:5}}>
@@ -50,6 +56,10 @@ export default function Index() {
         <Text style={{color:colors.navy,fontWeight:'800'}}>{busy?'Signing in…':'Continue with Google'}</Text>
       </Pressable>
       {!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ? <Text style={{fontSize:11,color:colors.muted,lineHeight:16,textAlign:'center'}}>Google sign-in needs your OAuth Web client ID and the Android app fingerprint configured in Google Cloud.</Text> : null}
+      {process.env.EXPO_PUBLIC_LOCAL_BOOTSTRAP === 'true' ? <Pressable disabled={busy} onPress={openLocalAiWorkspace} accessibilityRole="button" style={{backgroundColor:colors.navy,padding:16,borderRadius:17,alignItems:'center',gap:4,elevation:2}}>
+        <Text style={{color:'#FFFFFF',fontWeight:'800'}}>{busy ? 'Connecting…' : 'Connect to local AI workspace'}</Text>
+        <Text style={{color:'#D5E8FA',fontSize:11}}>Private Qwen3 model running on this computer</Text>
+      </Pressable> : null}
     </View>
     <View style={{height:1,backgroundColor:colors.border,marginVertical:1}}/>
     <View style={{backgroundColor:'#FFF9E8',borderWidth:1,borderColor:'#F1E3B7',padding:15,borderRadius:18,gap:6}}>
