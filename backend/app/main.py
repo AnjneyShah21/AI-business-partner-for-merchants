@@ -435,10 +435,10 @@ def parse_receivable_request(question: str, hindi: bool) -> dict | None:
         return None
 
     # Hindi word order puts the customer's name before "से" and often puts the
-    # amount after it. Let the local LLM extract that structure rather than
+    # amount after it. Let the configured LLM extract that structure rather than
     # accidentally treating the amount and following words as a person's name.
     if hindi or re.search(r"[\u0900-\u097F]", question):
-        if get_settings().model_provider.casefold() == "ollama":
+        if get_settings().model_provider.casefold() in {"ollama", "cloudflare"}:
             from app.providers import parse_receivable_command
             try:
                 draft = parse_receivable_command(question, "hi" if re.search(r"[\u0900-\u097F]", question) else "en")
@@ -466,7 +466,7 @@ def parse_receivable_request(question: str, hindi: bool) -> dict | None:
         except InvalidOperation:
             draft = None
 
-    if draft is None and get_settings().model_provider.casefold() == "ollama":
+    if draft is None and get_settings().model_provider.casefold() in {"ollama", "cloudflare"}:
         from app.providers import parse_receivable_command
         try:
             draft = parse_receivable_command(question, "hi" if hindi else "en")
@@ -476,7 +476,7 @@ def parse_receivable_request(question: str, hindi: bool) -> dict | None:
 
 
 def assistant_business_context(actor, db: Session) -> dict:
-    """Build a bounded snapshot for local inference; merchant rows never go to a cloud model."""
+    """Build a bounded per-merchant snapshot for the configured assistant provider."""
     merchant_id = actor["merchant_id"]
     as_of = datetime.now(timezone.utc)
     transactions = db.scalars(select(Transaction).where(
@@ -528,7 +528,7 @@ def assistant_business_context(actor, db: Session) -> dict:
 
 @api.post("/assistant/query", response_model=AssistantResponse)
 def assistant_query(body: AssistantRequest, actor=Depends(current_actor), db: Session = Depends(get_db)):
-    # Answer exact merchant questions from records first; use the local LLM for open-ended analysis.
+    # Answer exact merchant questions from records first; use an LLM for open-ended analysis.
     q = body.question.casefold()
     hindi = body.response_language == "hi" or (
         body.response_language is None and (
@@ -668,14 +668,23 @@ def assistant_query(body: AssistantRequest, actor=Depends(current_actor), db: Se
                   f"This merchant account has {len(customers)} customer records; {opted_in} have recorded marketing consent. Purchase history is not connected, so repeat buyers cannot be identified.")
         return respond(answer, ["/customers"])
     settings = get_settings()
-    if settings.model_provider.casefold() == "ollama":
-        from app.providers import ask_ollama
+    if settings.model_provider.casefold() in {"ollama", "cloudflare"}:
         context = assistant_business_context(actor, db)
         try:
-            answer = ask_ollama(body.question, context, "hi" if hindi else "en")
+            if settings.model_provider.casefold() == "cloudflare":
+                from app.providers import ask_cloudflare
+                answer = ask_cloudflare(body.question, context, "hi" if hindi else "en")
+            else:
+                from app.providers import ask_ollama
+                answer = ask_ollama(body.question, context, "hi" if hindi else "en")
         except RuntimeError as exc:
-            raise HTTPException(503, "The local AI model is unavailable. Start Ollama and load the configured model.") from exc
-        return respond(answer, ["local Ollama model", "merchant database snapshot"])
+            message = ("The hosted AI model is unavailable. Check the Cloudflare token, model access, and daily quota."
+                       if settings.model_provider.casefold() == "cloudflare" else
+                       "The local AI model is unavailable. Start Ollama and load the configured model.")
+            raise HTTPException(503, message) from exc
+        source = ("Cloudflare Workers AI · Qwen" if settings.model_provider.casefold() == "cloudflare"
+                  else "local Ollama model")
+        return respond(answer, [source, "merchant database snapshot"])
     if settings.model_provider.casefold() == "gemini" and settings.gemini_api_key:
         from app.providers import ask_gemini
         try:

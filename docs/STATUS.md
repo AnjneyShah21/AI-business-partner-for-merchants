@@ -11,7 +11,7 @@ The repository has working local source and tests. It is not a finished producti
 - SQLAlchemy persistence and five Alembic migrations for merchant/payment/settlement/inventory, workflow, inventory movement, import de-duplication and customer receivable tables.
 - Deterministic decimal calculations for collections and refunds; explicit wording distinguishes collections from profit and pending settlements from guaranteed receipts.
 - Merchant-authorized transaction CSV import with bounded rows, strict schema/time-zone validation, source labeling, duplicate suppression and audit records. Imported rows are not presented as live provider data.
-- Local Ollama/Qwen3 LLM integration for bounded merchant-context questions, plus a confirmed, tenant-scoped customer-receivable workflow. A pending-due note is not written until confirmation and is kept separate from payments and settlements.
+- Local Ollama/Qwen3 development integration and hosted Cloudflare Workers AI/Qwen integration for bounded merchant-context questions, plus a confirmed, tenant-scoped customer-receivable workflow. A pending-due note is not written until confirmation and is kept separate from payments and settlements.
 - Inventory adjustments use row locking, reject negative stock, and persist a movement ledger.
 - Sensitive purchase order and campaign drafts require an approval record. Approval only changes local workflow state to `approved_pending_provider`; it never sends the order, campaign or credit application.
 - Merchant data is never filled with sample transactions. Empty live feeds are shown as unavailable/empty.
@@ -22,7 +22,7 @@ The repository has working local source and tests. It is not a finished producti
 
 - Authorized OTP/identity provider, session refresh/revocation and account recovery.
 - Authorized payment/settlement connectors and webhook verification. No Paytm private API access is assumed.
-- Validation of the local LLM's accuracy, workload and language behavior on the target backend host, plus a managed speech policy for production. The offline preview uses fictional sample rules. Device speech recognition and ElevenLabs synthesis need device/account validation before production.
+- Validation of the hosted LLM's accuracy, workload, daily quota and language behavior, plus a managed speech policy for production. The offline preview uses fictional sample rules. Device speech recognition and ElevenLabs synthesis need device/account validation before production.
 - Authorized lender, tax filing, campaign delivery and push notification providers.
 - Complete organization-level membership/store entitlements, disputes/refunds, customer loyalty/segments, product catalog editing, report export, support workflows and durable background jobs.
 - Managed secrets, rate limits, observability, encryption/retention/deletion controls, backup restore drills and security/privacy/tax/lending review.

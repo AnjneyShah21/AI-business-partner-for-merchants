@@ -21,7 +21,13 @@ services:
       - key: GOOGLE_OAUTH_CLIENT_ID
         sync: false
       - key: MODEL_PROVIDER
-        value: none
+        value: cloudflare
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+      - key: CLOUDFLARE_MODEL
+        value: '@cf/qwen/qwen3-30b-a3b-fp8'
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: ELEVENLABS_VOICE_ID

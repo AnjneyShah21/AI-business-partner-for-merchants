@@ -22,7 +22,7 @@ Android merchant operations app and FastAPI service. The project now contains fu
 
 After changing backend routes/schemas, regenerate the mobile contract types with `npm run generate:api` from `mobile/`.
 
-The assistant accepts English and Hindi voice input and replies in the selected language. The dashboard mic opens a slide-up assistant sheet. Ollama's Qwen3 0.6B model handles general business questions locally; the authenticated API uses the ElevenLabs Python SDK for spoken MP3 replies when enabled, with Android voice fallback. Provider keys stay on the backend.
+The assistant accepts English and Hindi voice input and replies in the selected language. The dashboard mic opens a slide-up assistant sheet. Local development uses Ollama; the hosted backend can use Cloudflare Workers AI's Qwen model so inference does not use the merchant's phone or developer computer. Exact sales and customer-due answers are calculated from the merchant database, while open-ended answers receive a bounded business snapshot. The authenticated API uses ElevenLabs for spoken MP3 replies when enabled, with Android voice fallback. Provider credentials stay on the backend.
 
 The API base is `http://localhost:8000/api/v1` (Android emulator: `http://10.0.2.2:8000/api/v1`). Docs are available at `/api/v1/docs` and health at `/api/v1/health`.
 
@@ -32,4 +32,4 @@ Sales summaries/comparisons, peak-hour and threshold analysis; settlement/cash-f
 
 ## Production gates
 
-OTP authentication, live payment/settlement ingestion, validation of the local LLM on real workloads, production voice policies, lender offers/applications, statutory GST filing, campaign delivery, push notifications, durable workers, production observability/backups, compliance review and Android signing credentials still require authorized setup. Capabilities are reported by `/integrations/status`; absent services remain unavailable. See [implementation status](docs/STATUS.md), [integration requirements](docs/INTEGRATIONS.md), [security controls](docs/SECURITY.md), and [deployment steps](docs/DEPLOYMENT.md).
+OTP authentication, live payment/settlement ingestion, validation of the hosted LLM on real workloads, production voice policies, lender offers/applications, statutory GST filing, campaign delivery, push notifications, durable workers, production observability/backups, compliance review and Android signing credentials still require authorized setup. Capabilities are reported by `/integrations/status`; absent services remain unavailable. See [implementation status](docs/STATUS.md), [integration requirements](docs/INTEGRATIONS.md), [security controls](docs/SECURITY.md), and [deployment steps](docs/DEPLOYMENT.md).

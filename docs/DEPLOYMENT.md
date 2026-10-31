@@ -24,14 +24,14 @@
 
 ## Hosted demo backend (Render + Neon)
 
-The root `render.yaml` defines a Singapore Render web service for the `app` branch. It runs Alembic migrations before starting FastAPI and expects `DATABASE_URL`, `GOOGLE_OAUTH_CLIENT_ID`, and the optional ElevenLabs credentials as dashboard secrets. The database URL accepts PostgreSQL provider URLs and uses the installed psycopg v3 driver.
+The root `render.yaml` defines a Singapore Render web service for the `app` branch. It runs Alembic migrations before starting FastAPI and expects `DATABASE_URL`, `GOOGLE_OAUTH_CLIENT_ID`, Cloudflare Workers AI credentials, and optional ElevenLabs credentials as dashboard secrets. The database URL accepts PostgreSQL provider URLs and uses the installed psycopg v3 driver.
 
-Create a Neon PostgreSQL project in Singapore, copy its pooled connection URL, then create a Render Blueprint from this GitHub repository and select the `render.yaml` blueprint. Enter the connection URL and the existing Google Web OAuth client ID in Render's secret prompts; do not put either value in Git or chat. Render generates the session signing key. The API health URL is `/api/v1/health`.
+Create a Neon PostgreSQL project in Singapore, copy its pooled connection URL, then create a Render Blueprint from this GitHub repository and select the `render.yaml` blueprint. Enter the connection URL, Google Web OAuth client ID, Cloudflare Account ID, and Cloudflare Workers AI Read token in Render's secret prompts; do not put secret values in Git or chat. Render generates the session signing key. The API health URL is `/api/v1/health`.
 
 This is a free demo deployment, not production hosting: Render's free web service sleeps when idle and has a cold start; the free Neon database has usage limits and no managed daily backups. Do not store live payment credentials or rely on this setup for financial records without backups and a paid production plan.
 
-### Keep Qwen local while storing records in Neon
+### Cloud Qwen while storing records in Neon
 
-The hosted Render API uses the Neon database and has `MODEL_PROVIDER=none`; it does not call Gemini or Ollama. To keep Qwen on the developer computer for emulator use, keep the Android API URL at `http://10.0.2.2:8000/api/v1`, run the local FastAPI backend and Ollama on that computer, and set its `DATABASE_URL` to Neon's pooled connection string. The local backend then sends assistant prompts and the selected business snapshot to local Ollama while reads and confirmed writes persist to Neon. Set `DATABASE_URL_UNPOOLED` to Neon's direct connection string for Alembic migrations. Configure both as secrets in Render, and keep them in the ignored local `.env.local` only; do not put either URL in Git or chat.
+The hosted Render API uses the Neon database and can use Cloudflare Workers AI Qwen with `MODEL_PROVIDER=cloudflare`, `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN`. The phone calls only Render over HTTPS; inference does not need the user's computer or a downloaded model. Set the app build URL to `https://paytm-ai-business-partner-anjneyshah21.onrender.com/api/v1` and set `EXPO_PUBLIC_LOCAL_BOOTSTRAP=false`. The API sends a bounded merchant snapshot to Cloudflare for open-ended LLM answers. Exact transactional questions and confirmed receivable writes are still handled by the backend database.
 
-The hosted API and local-Qwen API are separate endpoints over the same database. A phone outside the Android emulator cannot reach `10.0.2.2`; it would need the hosted API URL, which provides structured data responses but no open-ended LLM until a model endpoint is explicitly configured. The Android app also needs a new build to switch its API URL.
+The hosted Render free service may sleep when idle, and Cloudflare's free model quota resets daily. Rebuild the Android app after changing its bundled API URL or Google sign-in configuration.

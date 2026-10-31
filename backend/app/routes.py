@@ -37,6 +37,11 @@ def integration_status(actor=Depends(current_actor)):
         if item.key == "llm" and settings.model_provider.casefold() == "gemini" and settings.gemini_api_key:
             status = "configured"
             prerequisite = "General AI only; free-tier prompts may be used to improve Google's products"
+        if item.key == "llm" and settings.model_provider.casefold() == "cloudflare":
+            configured = bool(settings.cloudflare_api_token and settings.cloudflare_account_id)
+            status = "configured" if configured else "not_configured"
+            prerequisite = (f"Cloudflare Workers AI Qwen ({settings.cloudflare_model}); free allowance is subject to daily quota"
+                            if configured else "Add a Cloudflare Account ID and Workers AI Read API token to the backend")
         if item.key == "llm" and settings.model_provider.casefold() == "ollama":
             from app.providers import ollama_model_ready
             status = "configured" if ollama_model_ready() else "not_configured"
