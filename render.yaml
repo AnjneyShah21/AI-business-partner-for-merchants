@@ -23,6 +23,6 @@ services:
       - key: SUPABASE_ANON_KEY
         sync: false
       - key: CORS_ORIGINS
-        sync: false
+        value: '["https://ai-business-partner-for-merchants-lv2bk3csp.vercel.app"]'
       - key: PROVIDER_MODE
         value: sandbox
